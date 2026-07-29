@@ -250,6 +250,12 @@ For more information about ANSI escape codes, refer to: [ANSI escape code - Hand
   - The timestamp shares `_debug_tick_ms` with the RA platform, feeds in from SysTick ISR
   - The platform selection mechanism is extended to three platform conditional compilations
 
+### v1.5 (2026-07-24)
+
+- **New**: TI MSPM0 DL platform support (`USE_TI_MSPM0_DL` macro)
+  - Timestamp counter shared with RA platform (`_debug_tick_ms`), fed from user SysTick ISR
+  - Platform selection mechanism extended to three platforms conditional compilation
+
 ## Other
 
 > This project was inspired by a suggestion from Zodiak_Jealously ;p
