@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @file    ElegantDebug.cpp
- * @version 1.5
+ * @version 1.6
  * @brief   C++ implementation for ANSI-colored debug logging — STM32 HAL,
  *          Renesas RA FSP, TI MSPM0 DL.
  *
@@ -15,7 +15,7 @@
  * `log()`, `info()`, `error()`, etc. See README for examples and integration notes.
  *
  * @author:    WilliTourt <willitourt@foxmail.com>
- * @date:      2026-07-24
+ * @date:      2026-08-09
  * 
  * @changelog:
  * - (See header file)
@@ -27,6 +27,10 @@
 
 #if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
 volatile uint32_t _debug_tick_ms = 0;
+#endif
+
+#if DEBUG_PLATFORM_RA
+volatile bool ElegantDebug::_txDone = true;
 #endif
 
 #if __cplusplus < 202002L
@@ -123,6 +127,11 @@ void ElegantDebug::_send(const char* text) {
         HAL_UART_Transmit(_huart, (uint8_t*)out, (uint16_t)strlen(out), HAL_MAX_DELAY);
         #endif
     #elif DEBUG_PLATFORM_RA
+        while (!_txDone) {
+            R_BSP_SoftwareDelay(1, BSP_DELAY_UNITS_MILLISECONDS);
+        }
+        _txDone = false;
+
         #ifdef R_SCI_UART_H
         R_SCI_UART_Write(const_cast<uart_instance_t*>(_uart)->p_ctrl,
                          (uint8_t*)out,

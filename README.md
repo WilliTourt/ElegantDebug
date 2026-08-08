@@ -5,7 +5,7 @@
 ## Introduction
 
 - A lightweight serial/USB-CDC debug library suitable for both C and C++ projects on STM32 using the HAL drivers, Renesas RA Family using FSP, or TI MSPM0 using DL (Driver Library).
-- Features: 
+- Features:
   - Formatted output
   - Optional timestamp
   - Optional filename and line number display for ERROR/WARNING messages
@@ -57,7 +57,7 @@ debug_init(&huart1, true /* enable timestamp */, true /* enable color */, false 
 2. Configure an **SCI UART** peripheral in RASC (any SCI channel).
 ![Example of RA UART Config](example_ra_uart_config.png)
 
-3. Initialize (C++ version shown, using `g_uart0` as example):
+3. Initialize (C++ version shown, using `g_uart0` as example). **Important:** RA FSP requires calling `ElegantDebug::onTxComplete(p_args)` (C++) or `debug_onTxComplete(p_args)` (C) inside the UART interrupt callback to detect TX completion. Failing to call this function will cause the library to hang on subsequent transmissions.
 
 ```cpp
 #include "ElegantDebug.h"
@@ -73,19 +73,21 @@ void cpp_main() {
 
     // ...
 }
+
+extern "C" void uart0_callback(uart_callback_args_t *p_args) {
+    ElegantDebug::onTxComplete(p_args);
+}
 ```
 
-4. **Timestamp feeding** (important): Since Renesas does not have an equivalent of `GetTick()` like STM32, the library needs you to maintain a **1 ms** counter. Call `debug_tick()` (C) / `ElegantDebug::tick()` (C++) from your timer ISR to increment this counter. For example, configure an AGT:
+4. **Timestamp feeding**: Since Renesas does not have an equivalent of `GetTick()` like STM32, the library needs you to maintain a **1 ms** counter. Call `debug_tick()` (C) / `ElegantDebug::tick()` (C++) from your timer ISR to increment this counter. For example, configure an AGT:
 ![Example of RA Tick Config](example_ra_tick_config.png)
 
 ```c
 // In your 1 ms timer ISR:
 void vSysTick(void) {
-    debug_tick(); // Feed ElegantDebug timestamp
+    debug_tick(); // Feed ElegantDebug timestamp. C++ uses `ElegantDebug::tick()` instead.
 }
 ```
-
-C++ version uses `ElegantDebug::tick()` instead.
 
 ### TI MSPM0 DL Platform
 
@@ -103,7 +105,7 @@ debug_init(UART0_INST, true, true, false);
 debug_info("Hello from TI MSPM0!");
 ```
 
-4. **Timestamp feeding** (important): Same as the RA platform, create a **1 ms** counter or call `debug_tick()` (C) / `ElegantDebug::tick()` (C++) from the SysTick ISR to update the timestamp.
+4. **Timestamp feeding**: Same as the RA platform, create a **1 ms** counter or call `debug_tick()` (C) / `ElegantDebug::tick()` (C++) from the SysTick ISR to update the timestamp.
 
 ### Shared Examples
 
@@ -135,6 +137,8 @@ debug_setFilenameLineEnabled(true);  // After enabling, error and warning messag
   - Initialize the library. Must be called before other functions. Provide a HAL UART handle / FSP UART instance / DL UART register pointer and flags to enable timestamp/color/filename-line display.
 - `static inline void debug_tick(void);` (RA FSP and TI MSPM0 only)
   - Call from a timer ISR to increment the internal millisecond counter used for timestamps.
+- `void debug_onTxComplete(uart_callback_args_t *p_args);` (RA FSP only)
+  - RA FSP specific — must be called from the UART TX complete interrupt callback. **Failure to call this will cause the library to hang on subsequent transmissions.**
 - `void debug_log(const char* format, ...);`
   - Basic formatted output (no prefix).
 - `void debug_logWithType(const char* type, const char* style, const char* format, ...);`
@@ -159,6 +163,8 @@ debug_setFilenameLineEnabled(true);  // After enabling, error and warning messag
   - Constructor: pass a HAL UART handle / FSP UART instance / DL UART register pointer and flags to enable timestamp/color/filename-line display.
 - `static inline void tick(void);` (RA FSP and TI MSPM0 only)
   - Static method, called from a timer ISR to increment the internal millisecond counter used for timestamps.
+- `static inline void onTxComplete(uart_callback_args_t *p_args);` (RA FSP only)
+  - RA FSP specific — must be called from the UART TX complete interrupt callback. **Failure to call this will cause the library to hang on subsequent transmissions.**
 - `void log(const char* format, ...);`
   - Basic formatted output (no prefix).
 - `void logWithType(const char* type, const char* style, const char* format, ...);`
@@ -210,6 +216,8 @@ For more information about ANSI escape codes, refer to: [ANSI escape code - Hand
   - If colors are enabled but your terminal does not support ANSI, call `debug_setColorEnabled(false)`.
 - RA / TI MSPM0 platform timestamps not working or showing `[00:00:00.000]`:
   - Ensure you are calling the tick function mentioned above in your 1 ms timer ISR.
+- RA platform TX hanging (program stuck in infinite loop):
+  - Make sure `onTxComplete()` / `debug_onTxComplete()` is called from your UART TX complete callback.
 - Unexpected resets/crashes:
   - Possible buffer overflow: check `DEBUG_BUFFER_LEN` (default 256). Increase it in `ElegantDebug.h` if you need longer messages.
 
@@ -250,11 +258,9 @@ For more information about ANSI escape codes, refer to: [ANSI escape code - Hand
   - The timestamp shares `_debug_tick_ms` with the RA platform, feeds in from SysTick ISR
   - The platform selection mechanism is extended to three platform conditional compilations
 
-### v1.5 (2026-07-24)
+### v1.6 (2026-08-09)
 
-- **New**: TI MSPM0 DL platform support (`USE_TI_MSPM0_DL` macro)
-  - Timestamp counter shared with RA platform (`_debug_tick_ms`), fed from user SysTick ISR
-  - Platform selection mechanism extended to three platforms conditional compilation
+- **Improvement**: In v1.4 and v1.5, consecutive log calls on the RA FSP platform (without manual delays between them) would cause data loss due to the non-blocking TX behaviour. Added `onTxComplete()` / `debug_onTxComplete()` which must be called from the TX complete UART callback to signal that the transmission has finished.
 
 ## Other
 

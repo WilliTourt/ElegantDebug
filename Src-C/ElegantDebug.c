@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @file    ElegantDebug.c
- * @version 1.5
+ * @version 1.6
  * @brief   C implementation for ANSI-colored debug logging — STM32 HAL, Renesas RA FSP, TI MSPM0 DL.
  *
  * Implements the C API declared in `Src-C/ElegantDebug.h`. Provides formatted
@@ -13,7 +13,7 @@
  * other functions in this file.
  *
  * @author:    WilliTourt <willitourt@foxmail.com>
- * @date:      2026-07-24
+ * @date:      2026-08-09
  *
  * @changelog:
  * - (See header file)
@@ -76,6 +76,16 @@ static uint32_t _getTick(void) {
 #endif
 }
 
+#if DEBUG_PLATFORM_RA
+static volatile bool _txDone = true;
+
+void debug_onTxComplete(uart_callback_args_t *p_args) {
+    if (p_args->event == UART_EVENT_TX_COMPLETE) {
+        _txDone = true;
+    }
+}
+#endif
+
 
 
 static void _send(const char* text) {
@@ -122,6 +132,11 @@ static void _send(const char* text) {
         HAL_UART_Transmit(_huart, (uint8_t*)out, (uint16_t)strlen(out), HAL_MAX_DELAY);
         #endif
     #elif DEBUG_PLATFORM_RA
+        while (!_txDone) {
+            R_BSP_SoftwareDelay(1, BSP_DELAY_UNITS_MILLISECONDS);
+        }
+        _txDone = false;
+
         #ifdef R_SCI_UART_H
         R_SCI_UART_Write(((uart_instance_t*)_uart)->p_ctrl,
                          (uint8_t*)out,

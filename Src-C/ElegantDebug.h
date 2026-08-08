@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @file    ElegantDebug.h
- * @version 1.5
+ * @version 1.6
  * @brief   ANSI-colored debug logging — STM32 HAL, Renesas RA FSP, TI MSPM0 DL.
  *
  * This header provides a small C API that mirrors the C++
@@ -25,7 +25,7 @@
  *   - See repository README for examples and integration instructions.
  *
  * @author:    WilliTourt <willitourt@foxmail.com>
- * @date:      2026-07-24
+ * @date:      2026-08-09
  *
  * @changelog:
  * - 2025-12-10: Initial release.
@@ -39,6 +39,8 @@
  *               Background colors too.
  * - 2026-07-16: Added Renesas RA FSP support (USE_RA_FSP).
  * - 2026-07-24: Added support for TI MSPM0 series.
+ * - 2026-08-09: Optimized RA FSP tx function. Now you MUST call
+ *               debug_onTxComplete(uart_callback_args_t *p_args) to set _txDone flag.
  *
  *******************************************************************************/
 
@@ -261,6 +263,10 @@ void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, 
 static inline void debug_tick() {
     _debug_tick_ms++;
 }
+#endif
+
+#if DEBUG_PLATFORM_RA
+void debug_onTxComplete(uart_callback_args_t *p_args);
 #endif
 
 // Basic formatted log

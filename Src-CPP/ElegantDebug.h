@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @file    ElegantDebug.h
- * @version 1.5
+ * @version 1.6
  * @brief   ANSI-colored debug logging — STM32 HAL, Renesas RA FSP, TI MSPM0 DL.
  *
  * Cross-platform C++ debug logger supporting STM32Cube HAL, Renesas RA FSP,
@@ -26,7 +26,7 @@
  *   - See repository README for examples and integration instructions.
  *
  * @author:    WilliTourt <willitourt@foxmail.com>
- * @date:      2026-07-24
+ * @date:      2026-08-09
  * 
  * @changelog:
  * - 2025-12-10: Initial release.
@@ -42,6 +42,8 @@
  *               in the color values at runtime. Background colors too.
  * - 2026-07-16: Added uart support to Renesas RA family mcus (USE_RA_FSP).
  * - 2026-07-24: Added support for TI MSPM0 series.
+ * - 2026-08-09: Optimized RA FSP tx function. Now you MUST call
+ *               onTxComplete(uart_callback_args_t *p_args) to set _txDone flag.
  * 
  *******************************************************************************/
 
@@ -271,10 +273,19 @@ class ElegantDebug {
 
         ~ElegantDebug();
 
-        // RA FSP tick provider (User must feed from timer ISR)
         #if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+        // RA FSP & TI MSPM0 DL tick provider (User must feed from timer ISR)
         static inline void tick() {
             _debug_tick_ms++;
+        }
+        #endif
+
+        #if DEBUG_PLATFORM_RA
+        // For RA FSP: Must call this from your uart callback
+        static inline void onTxComplete(uart_callback_args_t *p_args) {
+            if (p_args->event == UART_EVENT_TX_COMPLETE) {
+                _txDone = true;
+            }
         }
         #endif
 
@@ -324,6 +335,10 @@ class ElegantDebug {
 
         #if __cplusplus >= 202002L
         bool _filename_line_enabled;
+        #endif
+
+        #if DEBUG_PLATFORM_RA
+        static volatile bool _txDone;
         #endif
 
         void _send(const char* text);

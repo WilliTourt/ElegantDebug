@@ -56,7 +56,7 @@ debug_init(&huart1, true /* enable timestamp */, true /* enable color */, false 
 2. 在 RASC 中配置一个 **SCI UART** 外设（随便哪个SCI通道）。
 ![Example of RA UART Config](example_ra_uart_config.png)
 
-3. 初始化并使用（这里以 cpp 版本 `g_uart0` 为例）：
+3. 初始化并使用（这里以 cpp 版本 `g_uart0` 为例）。**注意（非常重要）：**RA FSP 需要特别在串口中断里调用`ElegantDebug::onTxComplete(p_args);`以检测发送是否完成，未调用此函数将会导致后续发送卡死循环。
 
 ```cpp
 #include "ElegantDebug.h"
@@ -72,19 +72,21 @@ void cpp_main() {
 
     // ...
 }
+
+extern "C" void uart0_callback(uart_callback_args_t *p_args) {
+    ElegantDebug::onTxComplete(p_args);
+}
 ```
 
-4. **时间戳喂入**（重要）：由于瑞萨没有像STM32一样的`GetTick()`，库需要你创建一个**1ms**计数器来生成时间戳，你需要从定时器回调中调用 `debug_tick()`（C版本）/`ElegantDebug::tick()`（CPP版本） 来递增这个计数器。例如配置一个AGT：
+4. **时间戳喂入**：由于瑞萨没有像STM32一样的`GetTick()`，库需要你创建一个**1ms**计数器来生成时间戳，你需要从定时器回调中调用 `debug_tick()`（C版本）/`ElegantDebug::tick()`（CPP版本） 来递增这个计数器。例如配置一个AGT：
 ![Example of RA Tick Config](example_ra_tick_config.png)
 
 ```c
 // 在你的 1ms 定时器 ISR 中：
 void vSysTick(void) {
-    debug_tick(); // 喂入 ElegantDebug 时间戳
+    debug_tick(); // 喂入 ElegantDebug 时间戳. C++ 版本使用 `ElegantDebug::tick()` 替代
 }
 ```
-
-C++ 版本使用 `ElegantDebug::tick()` 替代。
 
 ### TI MSPM0 DL 平台
 
@@ -102,7 +104,7 @@ debug_init(UART0_INST, true, true, false);
 debug_info("Hello from TI MSPM0!");
 ```
 
-4. **时间戳喂入**（重要）：与 RA 平台相同，请创建一个**1ms**计数器，或者从 SysTick ISR 调用 `debug_tick()`（C版本）/ `ElegantDebug::tick()`（CPP版本）来更新时间戳。
+4. **时间戳喂入**：与 RA 平台相同，请创建一个**1ms**计数器，或者从 SysTick ISR 调用 `debug_tick()`（C版本）/ `ElegantDebug::tick()`（CPP版本）来更新时间戳。
 
 ### 共用示例
 
@@ -134,6 +136,8 @@ debug_setFilenameLineEnabled(true);  // 启用后，error和warning信息将显�
   - 初始化库，必须先调用，传入 HAL UART 句柄 / FSP UART 实例 / DL UART 寄存器指针 和是否启用时间戳/颜色/文件名行号显示。
 - `static inline void debug_tick(void);`（仅 RA FSP 和 TI MSPM0）
   - 定时器 ISR 中调用以递增内部毫秒计数器，用于时间戳功能。
+- `void debug_onTxComplete(uart_callback_args_t *p_args);`（仅 RA FSP）
+  - RA FSP 特有，用于检测发送是否完成，**未调用此函数会导致后续发送卡死循环。**
 - `void debug_log(const char* format, ...);`
   - 原始格式化输出（无前缀）。
 - `void debug_logWithType(const char* type, const char* style, const char* format, ...);`
@@ -158,6 +162,8 @@ debug_setFilenameLineEnabled(true);  // 启用后，error和warning信息将显�
   - 构造函数，传入 HAL UART 句柄 / FSP UART 实例 / DL UART 寄存器指针 和是否启用时间戳/颜色/文件名行号显示。
 - `static inline void tick(void);`（仅 RA FSP 和 TI MSPM0）
   - 类静态方法，从定时器 ISR 中调用以递增内部毫秒计数器，用于时间戳功能。
+- `static inline void onTxComplete(uart_callback_args_t *p_args);`（仅 RA FSP）
+  - RA FSP 特有，用于检测发送是否完成，**未调用此函数会导致后续发送卡死循环。**
 - `void log(const char* format, ...);`
   - 原始格式化输出（无前缀）。
 - `void logWithType(const char* type, const char* style, const char* format, ...);`
@@ -208,6 +214,8 @@ COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
   - 如果启用颜色但终端不支持 ANSI，可以通过 `debug_setColorEnabled(false)` 关闭颜色。
 - RA 平台 / TI MSPM0 平台时间戳不工作或显示为 `[00:00:00.000]`：
   - 确认已在你的 1ms 定时器 ISR 中调用前文所述 tick。
+- RA 平台发送时程序卡死循环：
+  - 确认在串口回调中调用了onTxComplete()。
 - 异常重启
   - 可能是字符串溢出，检查`DEBUG_BUFFER_LEN`缓冲区长度（默认 256）。如需更长信息，在 `ElegantDebug.h` 中调整此宏
 
@@ -247,6 +255,11 @@ COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
 - **新增**: 支持 TI MSPM0 DL 平台（`USE_TI_MSPM0_DL` 宏）
   - 时间戳与 RA 平台共用 `_debug_tick_ms`，用户从 SysTick ISR 喂入
   - 平台选择机制扩展至三个平台条件编译
+
+### v1.6 (2026-08-09)
+
+- **改进**: v1.4 和 v1.5 版本中，RA FSP 平台中如连续发送log（中间无手动延时），会导致发送的数据丢失。针对 RA FSP 的非阻塞发送函数，添加了`onTxComplete()`函数，此函数在 TX 完成回调中必须调用来更新发送完成标志。
+
 
 ## 其他
 
