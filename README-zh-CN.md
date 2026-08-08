@@ -56,7 +56,7 @@ debug_init(&huart1, true /* enable timestamp */, true /* enable color */, false 
 2. 在 RASC 中配置一个 **SCI UART** 外设（随便哪个SCI通道）。
 ![Example of RA UART Config](example_ra_uart_config.png)
 
-3. 初始化并使用（这里以 cpp 版本 `g_uart0` 为例）。**注意（非常重要）：**RA FSP 需要特别在串口中断里调用`ElegantDebug::onTxComplete(p_args);`以检测发送是否完成，未调用此函数将会导致后续发送卡死循环。
+3. 初始化并使用（这里以 cpp 版本 `g_uart0` 为例）。**注意（非常重要）：** RA FSP 需要特别在串口中断里调用`ElegantDebug::onTxComplete(p_args);`以检测发送是否完成，未调用此函数将会导致后续发送卡死循环。
 
 ```cpp
 #include "ElegantDebug.h"
