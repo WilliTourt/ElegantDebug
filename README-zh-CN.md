@@ -1,10 +1,10 @@
 # Elegant Debug for STM32, Renesas-RA & TI-MSPM0 MCUs
 
-> **Language/语言**: [English](README.md) | [简体中文](README-zh-CN.md)
+> **Language/语言**: [English](README.md) | [简体中文](README-zh-CN.md)。
 
 ## 简介
 
-- 这是一个轻量的 串口/USB-CDC 调试库，C / C++ 均适用，适配STM32 HAL库、瑞萨RA FSP 以及 TI MSPM0 DL（Driver Library），提供格式化日志输出功能。
+- 这是一个轻量的 串口/USB-CDC 调试库，C / C++ 均适用，适配STM32 HAL库、瑞萨RA FSP 以及 TI MSPM0 DL（Driver Library），8051提供格式化日志输出功能。
 - 特点：
   - 格式化日志
   - 可选的时间戳
@@ -30,11 +30,12 @@
 - 依赖 STM32Cube HAL 驱动 / Renesas RA FSP，必须启用一个串口，或者启用USB-CDC（USB模式当前仅在STM32上有效。在MX配置中打开USB_DEVICE中间件，设置为CDC类即可）
 - 输出长度由 `DEBUG_BUFFER_LEN` 宏控制（默认 256）
 - 输出方式（串口/USB）由 `USB_AS_DEBUG_PORT` 宏控制（默认0，使用串口；设置为1使用USB-CDC）
-- ⚠️ **使用前必须选择平台**：在 include 之前，取消注释头文件中 `USE_STM32_HAL`、`USE_RA_FSP` 或 `USE_TI_MSPM0_DL` 其中一个宏
+- ⚠️ **使用前必须选择平台**：在 include 之前，取消注释头文件中 `USE_STM32_HAL`、`USE_RA_FSP`、  `USE_TI_MSPM0_DL`或`USE_8051` 其中一个宏
 
 ### STM32 HAL 平台
 
 1. 将 `Src-C/ElegantDebug.h` 与 `Src-C/ElegantDebug.c` 添加到你的工程（确保 `ElegantDebug.c` 被编译并加入链接）。
+
    - Makefile/CMake：将 `.../Src-C/ElegantDebug.c` 加入 `SRCS` / `target_sources`。
    - Keil/MDK / IAR / CubeIDE：在 Project Explorer 中 Right-click -> Add Existing Files。
 
@@ -54,7 +55,7 @@ debug_init(&huart1, true /* enable timestamp */, true /* enable color */, false 
 1. 同样将 `Src-C/ElegantDebug.h` 与 `Src-C/ElegantDebug.c` 添加到你的瑞萨工程。
 
 2. 在 RASC 中配置一个 **SCI UART** 外设（随便哪个SCI通道）。
-![Example of RA UART Config](example_ra_uart_config.png)
+   ![Example of RA UART Config](example_ra_uart_config.png)
 
 3. 初始化并使用（这里以 cpp 版本 `g_uart0` 为例）。**注意（非常重要）：** RA FSP 需要特别在串口中断里调用`ElegantDebug::onTxComplete(p_args);`以检测发送是否完成，未调用此函数将会导致后续发送卡死循环。
 
@@ -79,7 +80,7 @@ extern "C" void uart0_callback(uart_callback_args_t *p_args) {
 ```
 
 4. **时间戳喂入**：由于瑞萨没有像STM32一样的`GetTick()`，库需要你创建一个**1ms**计数器来生成时间戳，你需要从定时器回调中调用 `debug_tick()`（C版本）/`ElegantDebug::tick()`（CPP版本） 来递增这个计数器。例如配置一个AGT：
-![Example of RA Tick Config](example_ra_tick_config.png)
+   ![Example of RA Tick Config](example_ra_tick_config.png)
 
 ```c
 // 在你的 1ms 定时器 ISR 中：
@@ -105,6 +106,72 @@ debug_info("Hello from TI MSPM0!");
 ```
 
 4. **时间戳喂入**：与 RA 平台相同，请创建一个**1ms**计数器，或者从 SysTick ISR 调用 `debug_tick()`（C版本）/ `ElegantDebug::tick()`（CPP版本）来更新时间戳。
+
+### 8051 Keil C51 平台（仅 C 版本）
+
+1. 将 `Src-C/ElegantDebug.h` 与 `Src-C/ElegantDebug.c` 加入 Keil C51 工程。在 `ElegantDebug.h` 的平台选择区取消 `#define USE_8051` 前的注释，其他平台宏保持注释；当前默认已启用 `USE_8051`。采用这种方式时，工程宏列表可以保持为空，下面示例中的同名 `#define` 也可以省略。
+2. 将以下内容填写到 **Options for Target → BL51 Misc → Overlay**，使未调用的变参日志接口也能复用参数区，避免 DATA 空间溢出。此设置要求日志和 RGB 接口仅从主循环调用，`debug_tick()` 仅从定时器中断调用。
+
+```text
+MAIN ! (_DEBUG_INIT, _DEBUG_LOG, _DEBUG_LOGWITHTYPE,
+_DEBUG_ERROR_FILELINE, _DEBUG_WARNING_FILELINE, _DEBUG_ERROR, _DEBUG_WARNING,
+_DEBUG_OK, _DEBUG_SUCCESS, _DEBUG_INFO, _DEBUG_SETTIMESTAMPENABLED,
+_DEBUG_SETCOLORENABLED, _DEBUG_SETFILENAMELINEENABLED,
+_CUSTOMTEXTCOLOR, _CUSTOMBGCOLOR)
+```
+
+3. 初始化串口，并提供符合 C51 标准库声明的 `char putchar(char)`。例如，轮询发送实现如下；串口中断处理程序不能同时清除 TI。
+
+```c
+#define USE_8051
+#include <REG52.H>
+#include "ElegantDebug.h"
+
+char putchar(char c) {
+    SBUF = c;
+    while (!TI) { }
+    TI = 0;
+    return c;
+}
+
+/* 串口初始化后调用；8051 不需要 HAL UART 句柄。 */
+debug_init(true, true, true);
+debug_info("count=%u\r\n", (unsigned int)123);
+debug_error_fileline(__FILE__, __LINE__, "error=%d\r\n", (int)-1);
+```
+
+4. 需要时间戳时，在约 1 ms 的定时器 ISR 中调用 `debug_tick()`；不需要时将 `debug_init` 的第一个参数设为 `false`。库读取 32 位毫秒计数器时会短暂关闭中断并恢复原 EA 状态，计数器约 49.7 天后自然回绕。库不初始化串口或定时器。
+
+C51 不支持可变参数宏，普通 `debug_error()`、`debug_warning()` 不带调用位置；需要位置时使用上述 `_fileline` 接口。格式化采用 C51 标准库 `vprintf`，消息逐字符发送，`DEBUG_BUFFER_LEN` 不限制该分支的消息长度。变参实参应与格式匹配，例如 `(unsigned int)value`；字符串常量用于 `%s` 时写 `(char *)"text"`。SMALL 模型默认变参区为 15 字节，避免一次传入过多参数。
+
+RGB 文本和背景色函数各使用一个 24 字节 IDATA 静态缓冲区，返回值在下次调用相同函数时覆盖。日志不会自动添加换行，按需要在格式字符串中使用 `\r\n`。
+
+### 8051 SDCC 平台（仅 C 版本）
+
+在 VS Code + EIDE 中使用普通 **SDCC** 工具链，目标架构设为 `mcs51`，C 标准设为 C99。将 `Src-C` 加入源码目录及包含路径。在 `ElegantDebug.h` 的平台选择区取消 `#define USE_8051` 前的注释，其他平台宏保持注释；当前默认已启用 `USE_8051`。采用这种方式时，工程宏列表可以保持为空，下面示例中的同名 `#define` 也可以省略。
+
+在你的代码中包含头文件并初始化。先完成 UART 初始化并提供 `int putchar(int c)`，再从 `main()` 中调用下面的 `Debug_Init()`：
+
+```c
+#define USE_8051
+#include <8052.h>
+#include "ElegantDebug.h"
+
+void Debug_Init(void){
+    debug_init(false, false, false);
+    debug_info("Hello from SDCC!\r\n");
+}
+```
+
+构建参数可使用：
+
+```text
+--model-small --iram-size 256 --xram-size 0 --code-size 8192 --opt-code-size
+```
+
+应用程序包含 `<8052.h>`，提供 `int putchar(int c)`，中断采用 `void Timer2_ISR(void) __interrupt(5)` 写法。先初始化 UART，再调用 `debug_init(true, false, true)`；需要时间戳时，从约 1 ms 的定时器 ISR 调用 `debug_tick()`。库已提供 SDCC 的 `__idata` 和 `__critical` 分支，保留 Keil C51 支持
+
+默认 SDCC mcs51 SMALL 格式化库不支持 `%f` 输出，可以使用整数定点数，例如 `debug_info("value=%u.%02u\r\n", (unsigned int)25, (unsigned int)50)`。改变格式化库时，应重新评估 Flash 和 RAM。串口初始化、波特率、时钟模式和 `putchar` 由应用程序负责。
 
 ### 共用示例
 
@@ -185,9 +252,9 @@ debug_setFilenameLineEnabled(true);  // 启用后，error和warning信息将显�
 - `error` 和 `warning` 函数**不能使用可变参数**，因为它们需要获取调用位置（文件名和行号）。
 
 ```cpp
-	dbg.error("error test... %d\n", 12345); // 不对的用法
-	dbg.error("%serror test...\n", BOLD);   // 不对的用法
-	dbg.error("error test... \n");          // 对的用法
+    dbg.error("error test... %d\n", 12345); // 不对的用法
+    dbg.error("%serror test...\n", BOLD);   // 不对的用法
+    dbg.error("error test... \n");          // 对的用法
 
 // 前两行代码由于默认参数和可变参数混合时，参数匹配问题导致编译报错
 ```
@@ -259,7 +326,6 @@ COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
 ### v1.6 (2026-08-09)
 
 - **改进**: v1.4 和 v1.5 版本中，RA FSP 平台中如连续发送log（中间无手动延时），会导致发送的数据丢失。针对 RA FSP 的非阻塞发送函数，添加了`onTxComplete()`函数，此函数在 TX 完成回调中必须调用来更新发送完成标志。
-
 
 ## 其他
 
