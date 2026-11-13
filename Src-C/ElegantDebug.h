@@ -56,6 +56,7 @@
 // #define USE_STM32_HAL    // STM32Cube HAL
 // #define USE_RA_FSP       // Renesas RA FSP
 // #define USE_TI_MSPM0_DL  // TI MSPM0 DL (Driver Library)
+// #define USE_8051         // STC89C52RC with Keil C51 or SDCC (C version only)
 
 
 
@@ -87,8 +88,17 @@
     #define DEBUG_PLATFORM_STM32  0
     #define DEBUG_PLATFORM_RA     0
     #define DEBUG_PLATFORM_TI     1
+#elif defined(USE_8051)
+    #define DEBUG_PLATFORM_STM32  0
+    #define DEBUG_PLATFORM_RA     0
+    #define DEBUG_PLATFORM_TI     0
+    #define DEBUG_PLATFORM_8051   1
 #else
-    #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL macro before including ElegantDebug.h"
+    #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL / USE_8051 macro before including ElegantDebug.h"
+#endif
+
+#ifndef DEBUG_PLATFORM_8051
+    #define DEBUG_PLATFORM_8051 0
 #endif
 
 /*** Platform-specific includes *****************************************/
@@ -151,9 +161,20 @@
 
 
 
+#if DEBUG_PLATFORM_8051 && defined(__C51__)
+// Keil C51 provides neither stdbool.h nor stdint.h.
+typedef unsigned char bool;
+typedef unsigned char uint8_t;
+typedef unsigned long uint32_t;
+#ifndef true
+    #define true 1
+    #define false 0
+#endif
+#else
 #include <stdbool.h>
-#include <stdarg.h>
 #include <stdint.h>
+#endif
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -230,7 +251,7 @@
 
 
 // RA FSP / TI MSPM0 tick provider (User must feed from timer ISR)
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
 extern volatile uint32_t _debug_tick_ms;
 #endif
 
@@ -256,6 +277,12 @@ void debug_init(uart_instance_t const *uart, bool enable_timestamp, bool enable_
 #elif DEBUG_PLATFORM_TI
 // Initialize the library; MUST be called before other functions.
 void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, bool enable_filename_line);
+#elif DEBUG_PLATFORM_8051
+// Initialize UART and provide C51 char putchar(char) / SDCC int putchar(int).
+// Output is streamed through vprintf; DEBUG_BUFFER_LEN is not used.
+// C51 integration also needs the BL51 Overlay setting documented in README.
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
+void debug_tick(void); // Call only from a 1 ms timer ISR.
 #endif
 
 #if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
@@ -299,8 +326,14 @@ const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
 // Macros to automatically pass caller file/line
+#if DEBUG_PLATFORM_8051
+// C51 has no variadic macros. Use the explicit _fileline APIs for location.
+void debug_error(const char* format, ...);
+void debug_warning(const char* format, ...);
+#else
 #define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
 #define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
+#endif
 // #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
 
 #ifdef __cplusplus
