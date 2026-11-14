@@ -21,6 +21,389 @@
 
 #include "ElegantDebug.h"
 
+#if DEBUG_PLATFORM_8051
+
+/* ==================================================================
+ * 8051 (Keil C51) implementation.
+ *
+ * Keil C51 allocates locals statically and its printf library alone
+ * needs ~57 bytes of the 128 bytes of internal RAM, so the generic
+ * implementation below cannot be used on this platform. This block
+ * provides a self-contained version built around a single shared
+ * message buffer and a minimal formatter.
+ *
+ * Supported conversions: %d %i %u %x %X %s %c %% with optional '0'
+ * flag, field width and 'l' modifier. Floating point is not supported.
+ * ================================================================== */
+
+static bool _timestamp_enabled     = true;
+static bool _color_enabled         = true;
+static bool _filename_line_enabled = false;
+
+volatile uint32_t _debug_tick_ms = 0;
+
+static char xdata _dbg_msg[48];
+static char xdata _ansi[24];
+
+static void _c51_putc(char c)
+{
+    SBUF = c;
+    while (!TI);
+    TI = 0;
+}
+
+static void _c51_puts(const char *s)
+{
+    while (*s) _c51_putc(*s++);
+}
+
+static void _c51_put2(uint16_t v)
+{
+    _c51_putc((char)('0' + (v / 10U) % 10U));
+    _c51_putc((char)('0' + v % 10U));
+}
+
+static void _c51_put_uint(uint16_t v)
+{
+    char t[5];
+    uint8_t n = 0;
+
+    if (v == 0) t[n++] = '0';
+    while (v) {
+        t[n++] = (char)('0' + (v % 10U));
+        v = (uint16_t)(v / 10U);
+    }
+    while (n) _c51_putc(t[--n]);
+}
+
+static void _c51_timestamp(void)
+{
+    uint32_t ms;
+    uint32_t s;
+    uint32_t frac;
+
+    if (!_timestamp_enabled) return;
+
+    ms   = _debug_tick_ms;
+    s    = ms / 1000UL;
+    frac = ms % 1000UL;
+
+    _c51_putc('[');
+    _c51_put2((uint16_t)(s / 3600UL));
+    _c51_putc(':');
+    _c51_put2((uint16_t)((s / 60UL) % 60UL));
+    _c51_putc(':');
+    _c51_put2((uint16_t)(s % 60UL));
+    _c51_putc('.');
+    _c51_putc((char)('0' + (frac / 100UL)));
+    _c51_putc((char)('0' + ((frac / 10UL) % 10UL)));
+    _c51_putc((char)('0' + (frac % 10UL)));
+    _c51_putc(']');
+    _c51_putc(' ');
+}
+
+static uint8_t _fmt_put(char *b, uint8_t pos, uint8_t max, char c)
+{
+    if (pos < max - 1) b[pos] = c;
+    return (uint8_t)(pos + 1);
+}
+
+static uint8_t _fmt_num(char *b, uint8_t pos, uint8_t max,
+                        uint32_t v, uint8_t base, uint8_t upper,
+                        uint8_t width, char pad)
+{
+    char tmp[10];
+    uint8_t n = 0;
+    uint8_t i;
+    char d;
+
+    if (v == 0) tmp[n++] = '0';
+    while (v) {
+        d = (char)(v % base);
+        tmp[n++] = (d < 10) ? (char)('0' + d)
+                            : (char)((upper ? 'A' : 'a') + d - 10);
+        v /= base;
+    }
+    for (i = n; i < width && i > 0; i++) pos = _fmt_put(b, pos, max, pad);
+    while (n) pos = _fmt_put(b, pos, max, tmp[--n]);
+    return pos;
+}
+
+static void _fmt(char *b, uint8_t max, const char *f, va_list ap)
+{
+    uint8_t pos = 0;
+    uint8_t width;
+    uint8_t is_long;
+    char pad;
+
+    while (*f) {
+        if (*f != '%') {
+            pos = _fmt_put(b, pos, max, *f);
+            f++;
+            continue;
+        }
+        f++;
+
+        pad = ' ';
+        if (*f == '0') { pad = '0'; f++; }
+
+        width = 0;
+        while (*f >= '0' && *f <= '9') {
+            width = (uint8_t)(width * 10U + (uint8_t)(*f - '0'));
+            f++;
+        }
+
+        is_long = 0;
+        if (*f == 'l') { is_long = 1; f++; }
+
+        switch (*f) {
+        case 'd':
+        case 'i': {
+            long v;
+            v = is_long ? va_arg(ap, long) : (long)va_arg(ap, int);
+            if (v < 0) { pos = _fmt_put(b, pos, max, '-'); v = -v; }
+            pos = _fmt_num(b, pos, max, (uint32_t)v, 10, 0, width, pad);
+            break;
+        }
+        case 'u':
+            pos = _fmt_num(b, pos, max,
+                    is_long ? va_arg(ap, unsigned long)
+                            : (uint32_t)va_arg(ap, unsigned int),
+                    10, 0, width, pad);
+            break;
+        case 'x':
+        case 'X':
+            pos = _fmt_num(b, pos, max,
+                    is_long ? va_arg(ap, unsigned long)
+                            : (uint32_t)va_arg(ap, unsigned int),
+                    16, (uint8_t)((*f == 'X') ? 1 : 0), width, pad);
+            break;
+        case 's': {
+            char *s;
+            s = va_arg(ap, char *);
+            if (!s) s = (char *)"(null)";
+            while (*s) pos = _fmt_put(b, pos, max, *s++);
+            break;
+        }
+        case 'c':
+            pos = _fmt_put(b, pos, max, (char)va_arg(ap, int));
+            break;
+        case '%':
+            pos = _fmt_put(b, pos, max, '%');
+            break;
+        default:
+            pos = _fmt_put(b, pos, max, '%');
+            if (*f) pos = _fmt_put(b, pos, max, *f);
+            break;
+        }
+        if (*f) f++;
+    }
+
+    if (max == 0) return;
+    if (pos >= max) pos = (uint8_t)(max - 1);
+    b[pos] = '\0';
+}
+
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line)
+{
+    _timestamp_enabled     = enable_timestamp;
+    _color_enabled         = enable_color;
+    _filename_line_enabled = enable_filename_line;
+}
+
+void debug_log(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_dbg_msg);
+}
+
+void debug_logWithType(const char* type, const char* style, const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(BOLD);
+    _c51_puts(style);
+    _c51_putc('[');
+    _c51_puts(type);
+    _c51_puts("]");
+    _c51_puts(CLR);
+    _c51_putc(' ');
+    _c51_puts(_dbg_msg);
+}
+
+void debug_ok(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? OK_TYPE : OK_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_success(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? SUCCESS_TYPE : SUCCESS_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_info(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? INFO_TYPE : INFO_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_error(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? ERROR_TYPE : ERROR_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_warning(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? WARNING_TYPE : WARNING_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_error_fileline(const char* file, int line, const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? ERROR_TYPE : ERROR_TYPE_PLAIN);
+    if (_filename_line_enabled) {
+        _c51_putc('[');
+        _c51_puts(file);
+        _c51_putc(':');
+        _c51_put_uint((uint16_t)line);
+        _c51_puts("] ");
+    }
+    _c51_puts(_dbg_msg);
+}
+
+void debug_warning_fileline(const char* file, int line, const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? WARNING_TYPE : WARNING_TYPE_PLAIN);
+    if (_filename_line_enabled) {
+        _c51_putc('[');
+        _c51_puts(file);
+        _c51_putc(':');
+        _c51_put_uint((uint16_t)line);
+        _c51_puts("] ");
+    }
+    _c51_puts(_dbg_msg);
+}
+
+void debug_setTimestampEnabled(bool enabled)
+{
+    _timestamp_enabled = enabled;
+}
+
+void debug_setColorEnabled(bool enabled)
+{
+    _color_enabled = enabled;
+}
+
+void debug_setFilenameLineEnabled(bool enabled)
+{
+    _filename_line_enabled = enabled;
+}
+
+const char* customTextColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    uint8_t pos = 0;
+    uint8_t m = (uint8_t)sizeof(_ansi);
+
+    pos = _fmt_put(_ansi, pos, m, '\033');
+    pos = _fmt_put(_ansi, pos, m, '[');
+    pos = _fmt_put(_ansi, pos, m, '3');
+    pos = _fmt_put(_ansi, pos, m, '8');
+    pos = _fmt_put(_ansi, pos, m, ';');
+    pos = _fmt_put(_ansi, pos, m, '2');
+    pos = _fmt_put(_ansi, pos, m, ';');
+    pos = _fmt_num(_ansi, pos, m, (uint32_t)r, 10, 0, 0, ' ');
+    pos = _fmt_put(_ansi, pos, m, ';');
+    pos = _fmt_num(_ansi, pos, m, (uint32_t)g, 10, 0, 0, ' ');
+    pos = _fmt_put(_ansi, pos, m, ';');
+    pos = _fmt_num(_ansi, pos, m, (uint32_t)b, 10, 0, 0, ' ');
+    pos = _fmt_put(_ansi, pos, m, 'm');
+
+    if (pos >= m) pos = (uint8_t)(m - 1);
+    _ansi[pos] = '\0';
+    return _ansi;
+}
+
+const char* customBgColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    uint8_t pos = 0;
+    uint8_t m = (uint8_t)sizeof(_ansi);
+
+    pos = _fmt_put(_ansi, pos, m, '\033');
+    pos = _fmt_put(_ansi, pos, m, '[');
+    pos = _fmt_put(_ansi, pos, m, '4');
+    pos = _fmt_put(_ansi, pos, m, '8');
+    pos = _fmt_put(_ansi, pos, m, ';');
+    pos = _fmt_put(_ansi, pos, m, '2');
+    pos = _fmt_put(_ansi, pos, m, ';');
+    pos = _fmt_num(_ansi, pos, m, (uint32_t)r, 10, 0, 0, ' ');
+    pos = _fmt_put(_ansi, pos, m, ';');
+    pos = _fmt_num(_ansi, pos, m, (uint32_t)g, 10, 0, 0, ' ');
+    pos = _fmt_put(_ansi, pos, m, ';');
+    pos = _fmt_num(_ansi, pos, m, (uint32_t)b, 10, 0, 0, ' ');
+    pos = _fmt_put(_ansi, pos, m, 'm');
+
+    if (pos >= m) pos = (uint8_t)(m - 1);
+    _ansi[pos] = '\0';
+    return _ansi;
+}
+
+#else
+
+
 
 
 #if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
@@ -293,3 +676,5 @@ const char* customBgColor(uint8_t r, uint8_t g, uint8_t b) {
     snprintf(ansi, sizeof(ansi), "\033[48;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
     return ansi;
 }
+
+#endif

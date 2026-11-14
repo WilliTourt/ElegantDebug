@@ -56,7 +56,7 @@
 // #define USE_STM32_HAL    // STM32Cube HAL
 // #define USE_RA_FSP       // Renesas RA FSP
 // #define USE_TI_MSPM0_DL  // TI MSPM0 DL (Driver Library)
-
+// #define USE_8051_C51     // 8051 (Keil C51)
 
 
 // USB / UART choices:
@@ -69,7 +69,15 @@
 
 /*** Buffer size settings ***********************************************/
 
-#define DEBUG_BUFFER_LEN 256
+#if defined(USE_8051_C51)
+    #define DEBUG_BUFFER_LEN      16
+    #define DEBUG_COMBINED_32     24
+    #define DEBUG_COMBINED_96     32
+#else
+    #define DEBUG_BUFFER_LEN      256
+    #define DEBUG_COMBINED_32     (DEBUG_BUFFER_LEN + 32)
+    #define DEBUG_COMBINED_96     (DEBUG_BUFFER_LEN + 96)
+#endif
 
 /************************************************************************/
 
@@ -79,6 +87,11 @@
     #define DEBUG_PLATFORM_STM32  1
     #define DEBUG_PLATFORM_RA     0
     #define DEBUG_PLATFORM_TI     0
+#elif defined(USE_8051_C51)
+    #define DEBUG_PLATFORM_STM32  0
+    #define DEBUG_PLATFORM_RA     0
+    #define DEBUG_PLATFORM_TI     0
+    #define DEBUG_PLATFORM_8051   1
 #elif defined(USE_RA_FSP)
     #define DEBUG_PLATFORM_STM32  0
     #define DEBUG_PLATFORM_RA     1
@@ -88,7 +101,7 @@
     #define DEBUG_PLATFORM_RA     0
     #define DEBUG_PLATFORM_TI     1
 #else
-    #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL macro before including ElegantDebug.h"
+    #error "Please define USE_8051_C51 / USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL macro before including ElegantDebug.h"
 #endif
 
 /*** Platform-specific includes *****************************************/
@@ -150,12 +163,29 @@
 #endif
 
 
+#if defined(USE_8051_C51)
+    #include <reg52.h>
+    #include <stdarg.h>
+    #include <stddef.h>
+    #include <stdio.h>
+    #include <string.h>
+    
+    #ifndef true
+        #define true   1
+        #define false  0
+    #endif
+    typedef unsigned char bool;
 
-#include <stdbool.h>
-#include <stdarg.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+    typedef unsigned char uint8_t;
+    typedef unsigned int uint16_t;
+    typedef unsigned long uint32_t;
+#else
+    #include <stdbool.h>
+    #include <stdarg.h>
+    #include <stdint.h>
+    #include <stdio.h>
+    #include <string.h>
+#endif
 
 /* ANSI escape codes for output *****************************************/
 
@@ -230,7 +260,7 @@
 
 
 // RA FSP / TI MSPM0 tick provider (User must feed from timer ISR)
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
 extern volatile uint32_t _debug_tick_ms;
 #endif
 
@@ -256,6 +286,8 @@ void debug_init(uart_instance_t const *uart, bool enable_timestamp, bool enable_
 #elif DEBUG_PLATFORM_TI
 // Initialize the library; MUST be called before other functions.
 void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, bool enable_filename_line);
+#elif DEBUG_PLATFORM_8051
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
 #endif
 
 #if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
@@ -263,6 +295,8 @@ void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, 
 static inline void debug_tick() {
     _debug_tick_ms++;
 }
+#elif DEBUG_PLATFORM_8051
+#define debug_tick()    (_debug_tick_ms++)
 #endif
 
 #if DEBUG_PLATFORM_RA
@@ -298,9 +332,14 @@ void debug_setFilenameLineEnabled(bool enabled);
 const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
+#if DEBUG_PLATFORM_8051
+void debug_error(const char* format, ...);
+void debug_warning(const char* format, ...);
+#else
 // Macros to automatically pass caller file/line
 #define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
 #define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
+#endif
 // #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
 
 #ifdef __cplusplus
