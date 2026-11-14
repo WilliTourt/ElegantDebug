@@ -1,10 +1,10 @@
-# Elegant Debug for STM32, Renesas-RA & TI-MSPM0 MCUs
+# Elegant Debug for STM32, Renesas-RA, TI-MSPM0 & 8051 MCUs
 
 > **Language/语言**: [English](README.md) | [简体中文](README-zh-CN.md)
 
 ## Introduction
 
-- A lightweight serial/USB-CDC debug library suitable for both C and C++ projects on STM32 using the HAL drivers, Renesas RA Family using FSP, or TI MSPM0 using DL (Driver Library).
+- A lightweight serial/USB-CDC debug library suitable for both C and C++ projects on STM32 using the HAL drivers, Renesas RA Family using FSP, TI MSPM0 using DL (Driver Library), or 8051 using Keil C51.
 - Features:
   - Formatted output
   - Optional timestamp
@@ -27,10 +27,10 @@ Supports customized 24-bit colors:
 
 ## Quick Start
 
-- Depends on STM32Cube HAL / Renesas RA FSP / TI MSPM0 DL, At least one UART enabled, or USB-CDC enabled (USB-CDC are currently only available on STM32. Enable USB_DEVICE middleware in MX and set to CDC class).
+- Depends on STM32Cube HAL / Renesas RA FSP / TI MSPM0 DL / Keil C51, At least one UART enabled, or USB-CDC enabled (USB-CDC are currently only available on STM32. Enable USB_DEVICE middleware in MX and set to CDC class).
 - The output buffer length is controlled by the `DEBUG_BUFFER_LEN` macro (default 256).
 - Output method (UART/USB) is controlled by the `USB_AS_DEBUG_PORT` macro (default 0 for UART; set to 1 for USB-CDC).
-- ⚠️ **Platform must be selected before use**: uncomment either `USE_STM32_HAL`, `USE_RA_FSP` or `USE_TI_MSPM0_DL` in the header file before including it.
+- ⚠️ **Platform must be selected before use**: uncomment either `USE_STM32_HAL`, `USE_RA_FSP`, `USE_TI_MSPM0_DL` or `USE_8051_C51` in the header file before including it.
 
 ### STM32 HAL Platform
 
@@ -107,8 +107,35 @@ debug_info("Hello from TI MSPM0!");
 
 4. **Timestamp feeding**: Same as the RA platform, create a **1 ms** counter or call `debug_tick()` (C) / `ElegantDebug::tick()` (C++) from the SysTick ISR to update the timestamp.
 
-### Shared Examples
+### 8051 (Keil C51) Platform
 
+1. Add `Src-C/ElegantDebug.h` and `Src-C/ElegantDebug.c` to your Keil project.
+2. Define `USE_8051_C51` (project options, `Define:` field, or before the
+   `#include`). Enable **internal extended RAM** on parts that provide it.
+3. Include the header and initialize (there is no UART handle on 8051):
+
+```c
+#include "ElegantDebug.h"
+
+debug_init(true /* enable timestamp */, true /* enable color */, false /* enable filename line */);
+```
+
+4. **Timestamp feeding**: call `debug_tick()` from a 1 ms timer interrupt,
+   the same way as on the RA FSP and TI MSPM0 platforms.
+
+```c
+void T0_ISR(void) interrupt 1 {
+    TH0 = 0xFC;  TL0 = 0x66;
+    debug_tick();
+}
+```
+
+5. **RAM**: this platform places its message buffers in `xdata`, because the
+   128 bytes of internal RAM are not enough. See
+   [`Examples/8051`](Examples/8051) for a complete Keil project, the measured
+   resource usage and the platform limitations.
+
+### Shared Examples
 ```c
 debug_log("Hello world!");
 debug_info("System started. Free memory: %d bytes", free_mem);

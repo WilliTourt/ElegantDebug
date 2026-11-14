@@ -21,6 +21,251 @@
 
 #include "ElegantDebug.h"
 
+#if DEBUG_PLATFORM_8051
+
+/* ==================================================================
+ * 8051 (Keil C51) implementation.
+ *
+ * Keil C51 allocates locals statically and its printf library alone
+ * needs ~57 bytes of the 128 bytes of internal RAM, so the generic
+ * implementation below cannot be used on this platform. This block
+ * provides a self-contained version built around a single shared
+ * message buffer and a minimal formatter.
+ *
+ * Supported conversions: %d %i %u %x %X %s %c %% with optional '0'
+ * flag, field width and 'l' modifier. Floating point is not supported.
+ * ================================================================== */
+
+static bool _timestamp_enabled     = true;
+static bool _color_enabled         = true;
+static bool _filename_line_enabled = false;
+
+volatile uint32_t _debug_tick_ms = 0;
+
+static char xdata _dbg_msg[48];
+static char xdata _ansi[24];
+
+static void _c51_putc(char c)
+{
+    SBUF = c;
+    while (!TI);
+    TI = 0;
+}
+
+static void _c51_puts(const char *s)
+{
+    while (*s) _c51_putc(*s++);
+}
+
+static void _c51_put2(uint16_t v)
+{
+    _c51_putc((char)('0' + (v / 10U) % 10U));
+    _c51_putc((char)('0' + v % 10U));
+}
+
+static void _c51_put_uint(uint16_t v)
+{
+    char t[5];
+    uint8_t n = 0;
+
+    if (v == 0) t[n++] = '0';
+    while (v) {
+        t[n++] = (char)('0' + (v % 10U));
+        v = (uint16_t)(v / 10U);
+    }
+    while (n) _c51_putc(t[--n]);
+}
+
+static void _c51_timestamp(void)
+{
+    uint32_t ms;
+    uint32_t s;
+    uint32_t frac;
+
+    if (!_timestamp_enabled) return;
+
+    ms   = _debug_tick_ms;
+    s    = ms / 1000UL;
+    frac = ms % 1000UL;
+
+    _c51_putc('[');
+    _c51_put2((uint16_t)(s / 3600UL));
+    _c51_putc(':');
+    _c51_put2((uint16_t)((s / 60UL) % 60UL));
+    _c51_putc(':');
+    _c51_put2((uint16_t)(s % 60UL));
+    _c51_putc('.');
+    _c51_putc((char)('0' + (frac / 100UL)));
+    _c51_putc((char)('0' + ((frac / 10UL) % 10UL)));
+    _c51_putc((char)('0' + (frac % 10UL)));
+    _c51_putc(']');
+    _c51_putc(' ');
+}
+
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line)
+{
+    _timestamp_enabled     = enable_timestamp;
+    _color_enabled         = enable_color;
+    _filename_line_enabled = enable_filename_line;
+}
+
+void debug_log(const char* format, ...)
+{
+    va_list ap;
+
+    va_start(ap, format);
+    vsprintf(_dbg_msg, format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_dbg_msg);
+}
+
+void debug_logWithType(const char* type, const char* style, const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vsprintf(_dbg_msg, format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(BOLD);
+    _c51_puts(style);
+    _c51_putc('[');
+    _c51_puts(type);
+    _c51_puts("]");
+    _c51_puts(CLR);
+    _c51_putc(' ');
+    _c51_puts(_dbg_msg);
+}
+
+void debug_ok(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vsprintf(_dbg_msg, format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? OK_TYPE : OK_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_success(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vsprintf(_dbg_msg, format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? SUCCESS_TYPE : SUCCESS_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_info(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vsprintf(_dbg_msg, format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? INFO_TYPE : INFO_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_error(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vsprintf(_dbg_msg, format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? ERROR_TYPE : ERROR_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_warning(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vsprintf(_dbg_msg, format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? WARNING_TYPE : WARNING_TYPE_PLAIN);
+    _c51_puts(_dbg_msg);
+}
+
+void debug_error_fileline(const char* file, int line, const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vsprintf(_dbg_msg, format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? ERROR_TYPE : ERROR_TYPE_PLAIN);
+    if (_filename_line_enabled) {
+        _c51_putc('[');
+        _c51_puts(file);
+        _c51_putc(':');
+        _c51_put_uint((uint16_t)line);
+        _c51_puts("] ");
+    }
+    _c51_puts(_dbg_msg);
+}
+
+void debug_warning_fileline(const char* file, int line, const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    vsprintf(_dbg_msg, format, ap);
+    va_end(ap);
+
+    _c51_timestamp();
+    _c51_puts(_color_enabled ? WARNING_TYPE : WARNING_TYPE_PLAIN);
+    if (_filename_line_enabled) {
+        _c51_putc('[');
+        _c51_puts(file);
+        _c51_putc(':');
+        _c51_put_uint((uint16_t)line);
+        _c51_puts("] ");
+    }
+    _c51_puts(_dbg_msg);
+}
+
+void debug_setTimestampEnabled(bool enabled)
+{
+    _timestamp_enabled = enabled;
+}
+
+void debug_setColorEnabled(bool enabled)
+{
+    _color_enabled = enabled;
+}
+
+void debug_setFilenameLineEnabled(bool enabled)
+{
+    _filename_line_enabled = enabled;
+}
+
+const char* customTextColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    sprintf(_ansi, "\033[38;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
+    return _ansi;
+}
+
+const char* customBgColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    sprintf(_ansi, "\033[48;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
+    return _ansi;
+}
+#else
+
+
 
 
 #if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
@@ -282,14 +527,15 @@ void debug_setFilenameLineEnabled(bool enabled) {
 
 
 // runtime helpers for 24‑bit ANSI colours; return a pointer to a static buffer
-const char* customTextColor(uint8_t r, uint8_t g, uint8_t b) {
-    static char ansi[24];
-    snprintf(ansi, sizeof(ansi), "\033[38;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
-    return ansi;
+const char* customTextColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    sprintf(_ansi, "\033[38;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
+    return _ansi;
 }
 
-const char* customBgColor(uint8_t r, uint8_t g, uint8_t b) {
-    static char ansi[24];
-    snprintf(ansi, sizeof(ansi), "\033[48;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
-    return ansi;
+const char* customBgColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    sprintf(_ansi, "\033[48;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
+    return _ansi;
 }
+#endif
