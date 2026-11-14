@@ -390,7 +390,8 @@
               <FileName>ElegantDebug.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\Src-C\ElegantDebug.c</FilePath>
-            </File>          </Files>
+            </File>
+          </Files>
         </Group>
       </Groups>
     </Target>

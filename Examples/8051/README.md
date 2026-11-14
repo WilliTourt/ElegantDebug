@@ -33,14 +33,20 @@ Use a terminal that understands ANSI escape codes (PuTTY, Windows Terminal,
 MobaXterm, or a serial monitor with ANSI enabled). STC-ISP's built-in
 terminal does not render colors.
 
+![screenshot](screenshot.png)
+
 ```
-[00:00:00.000] plain 1
-[00:00:00.001] [TRACE] typed 2
-[00:00:00.002] [INFO] info 3
-[00:00:00.003] [OK] ok 4
-[00:00:00.004] [SUCCESS] success 5
-[00:00:00.005] [ERROR] error -6
-[00:00:00.006] [WARNING] warn 7
+[00:00:00.002] Hello from 8051!
+[00:00:00.049] [INFO] System started. Free memory: 1024 bytes
+[00:00:00.136] [OK] UART 9600 8N1 initialized
+[00:00:00.207] [SUCCESS] All peripherals ready
+[00:00:00.279] [WARNING] Battery low: 15 %
+[00:00:00.348] [ERROR] Sensor failed: code = -3
+[00:00:00.420] [TRACE] tick = 42
+[00:00:00.478] [ERROR] [main.c:62] explicit file and line
+[00:00:00.561] [WARNING] [main.c:63] explicit file and line
+[00:00:00.651] custom fg
+[00:00:00.710] custom bg
 ```
 
 ## Resource usage
@@ -83,3 +89,23 @@ implementation impractical on this platform:
 
 The implementation therefore lives in its own `#if DEBUG_PLATFORM_8051`
 block, while the code for the other platforms is compiled unchanged.
+
+## Integer constants in variadic arguments
+
+Keil C51 does **not** apply the default argument promotions required by
+C89. An integer **constant** passed to a variadic function is stored in
+the smallest type that can hold it, while the callee reads a 16-bit
+`int`. `debug_info("value = %d", 1)` therefore prints the wrong number.
+
+Add an explicit cast, or pass a variable:
+
+```c
+debug_info("value = %d", (int)1);   /* correct */
+debug_info("value = %d", 1);        /* wrong on C51 */
+
+int v = 1;
+debug_info("value = %d", v);        /* correct */
+```
+
+This is a property of the Keil C51 compiler, not of this library. It
+affects `printf`/`sprintf` in exactly the same way.

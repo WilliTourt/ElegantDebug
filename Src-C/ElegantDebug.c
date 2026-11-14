@@ -102,108 +102,6 @@ static void _c51_timestamp(void)
     _c51_putc(' ');
 }
 
-static uint8_t _fmt_put(char *b, uint8_t pos, uint8_t max, char c)
-{
-    if (pos < max - 1) b[pos] = c;
-    return (uint8_t)(pos + 1);
-}
-
-static uint8_t _fmt_num(char *b, uint8_t pos, uint8_t max,
-                        uint32_t v, uint8_t base, uint8_t upper,
-                        uint8_t width, char pad)
-{
-    char tmp[10];
-    uint8_t n = 0;
-    uint8_t i;
-    char d;
-
-    if (v == 0) tmp[n++] = '0';
-    while (v) {
-        d = (char)(v % base);
-        tmp[n++] = (d < 10) ? (char)('0' + d)
-                            : (char)((upper ? 'A' : 'a') + d - 10);
-        v /= base;
-    }
-    for (i = n; i < width && i > 0; i++) pos = _fmt_put(b, pos, max, pad);
-    while (n) pos = _fmt_put(b, pos, max, tmp[--n]);
-    return pos;
-}
-
-static void _fmt(char *b, uint8_t max, const char *f, va_list ap)
-{
-    uint8_t pos = 0;
-    uint8_t width;
-    uint8_t is_long;
-    char pad;
-
-    while (*f) {
-        if (*f != '%') {
-            pos = _fmt_put(b, pos, max, *f);
-            f++;
-            continue;
-        }
-        f++;
-
-        pad = ' ';
-        if (*f == '0') { pad = '0'; f++; }
-
-        width = 0;
-        while (*f >= '0' && *f <= '9') {
-            width = (uint8_t)(width * 10U + (uint8_t)(*f - '0'));
-            f++;
-        }
-
-        is_long = 0;
-        if (*f == 'l') { is_long = 1; f++; }
-
-        switch (*f) {
-        case 'd':
-        case 'i': {
-            long v;
-            v = is_long ? va_arg(ap, long) : (long)va_arg(ap, int);
-            if (v < 0) { pos = _fmt_put(b, pos, max, '-'); v = -v; }
-            pos = _fmt_num(b, pos, max, (uint32_t)v, 10, 0, width, pad);
-            break;
-        }
-        case 'u':
-            pos = _fmt_num(b, pos, max,
-                    is_long ? va_arg(ap, unsigned long)
-                            : (uint32_t)va_arg(ap, unsigned int),
-                    10, 0, width, pad);
-            break;
-        case 'x':
-        case 'X':
-            pos = _fmt_num(b, pos, max,
-                    is_long ? va_arg(ap, unsigned long)
-                            : (uint32_t)va_arg(ap, unsigned int),
-                    16, (uint8_t)((*f == 'X') ? 1 : 0), width, pad);
-            break;
-        case 's': {
-            char *s;
-            s = va_arg(ap, char *);
-            if (!s) s = (char *)"(null)";
-            while (*s) pos = _fmt_put(b, pos, max, *s++);
-            break;
-        }
-        case 'c':
-            pos = _fmt_put(b, pos, max, (char)va_arg(ap, int));
-            break;
-        case '%':
-            pos = _fmt_put(b, pos, max, '%');
-            break;
-        default:
-            pos = _fmt_put(b, pos, max, '%');
-            if (*f) pos = _fmt_put(b, pos, max, *f);
-            break;
-        }
-        if (*f) f++;
-    }
-
-    if (max == 0) return;
-    if (pos >= max) pos = (uint8_t)(max - 1);
-    b[pos] = '\0';
-}
-
 void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line)
 {
     _timestamp_enabled     = enable_timestamp;
@@ -214,8 +112,9 @@ void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_l
 void debug_log(const char* format, ...)
 {
     va_list ap;
+
     va_start(ap, format);
-    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    vsprintf(_dbg_msg, format, ap);
     va_end(ap);
 
     _c51_timestamp();
@@ -226,7 +125,7 @@ void debug_logWithType(const char* type, const char* style, const char* format, 
 {
     va_list ap;
     va_start(ap, format);
-    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    vsprintf(_dbg_msg, format, ap);
     va_end(ap);
 
     _c51_timestamp();
@@ -244,7 +143,7 @@ void debug_ok(const char* format, ...)
 {
     va_list ap;
     va_start(ap, format);
-    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    vsprintf(_dbg_msg, format, ap);
     va_end(ap);
 
     _c51_timestamp();
@@ -256,7 +155,7 @@ void debug_success(const char* format, ...)
 {
     va_list ap;
     va_start(ap, format);
-    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    vsprintf(_dbg_msg, format, ap);
     va_end(ap);
 
     _c51_timestamp();
@@ -268,7 +167,7 @@ void debug_info(const char* format, ...)
 {
     va_list ap;
     va_start(ap, format);
-    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    vsprintf(_dbg_msg, format, ap);
     va_end(ap);
 
     _c51_timestamp();
@@ -280,7 +179,7 @@ void debug_error(const char* format, ...)
 {
     va_list ap;
     va_start(ap, format);
-    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    vsprintf(_dbg_msg, format, ap);
     va_end(ap);
 
     _c51_timestamp();
@@ -292,7 +191,7 @@ void debug_warning(const char* format, ...)
 {
     va_list ap;
     va_start(ap, format);
-    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    vsprintf(_dbg_msg, format, ap);
     va_end(ap);
 
     _c51_timestamp();
@@ -304,7 +203,7 @@ void debug_error_fileline(const char* file, int line, const char* format, ...)
 {
     va_list ap;
     va_start(ap, format);
-    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    vsprintf(_dbg_msg, format, ap);
     va_end(ap);
 
     _c51_timestamp();
@@ -323,7 +222,7 @@ void debug_warning_fileline(const char* file, int line, const char* format, ...)
 {
     va_list ap;
     va_start(ap, format);
-    _fmt(_dbg_msg, (uint8_t)sizeof(_dbg_msg), format, ap);
+    vsprintf(_dbg_msg, format, ap);
     va_end(ap);
 
     _c51_timestamp();
@@ -355,52 +254,15 @@ void debug_setFilenameLineEnabled(bool enabled)
 
 const char* customTextColor(uint8_t r, uint8_t g, uint8_t b)
 {
-    uint8_t pos = 0;
-    uint8_t m = (uint8_t)sizeof(_ansi);
-
-    pos = _fmt_put(_ansi, pos, m, '\033');
-    pos = _fmt_put(_ansi, pos, m, '[');
-    pos = _fmt_put(_ansi, pos, m, '3');
-    pos = _fmt_put(_ansi, pos, m, '8');
-    pos = _fmt_put(_ansi, pos, m, ';');
-    pos = _fmt_put(_ansi, pos, m, '2');
-    pos = _fmt_put(_ansi, pos, m, ';');
-    pos = _fmt_num(_ansi, pos, m, (uint32_t)r, 10, 0, 0, ' ');
-    pos = _fmt_put(_ansi, pos, m, ';');
-    pos = _fmt_num(_ansi, pos, m, (uint32_t)g, 10, 0, 0, ' ');
-    pos = _fmt_put(_ansi, pos, m, ';');
-    pos = _fmt_num(_ansi, pos, m, (uint32_t)b, 10, 0, 0, ' ');
-    pos = _fmt_put(_ansi, pos, m, 'm');
-
-    if (pos >= m) pos = (uint8_t)(m - 1);
-    _ansi[pos] = '\0';
+    sprintf(_ansi, "\033[38;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
     return _ansi;
 }
 
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b)
 {
-    uint8_t pos = 0;
-    uint8_t m = (uint8_t)sizeof(_ansi);
-
-    pos = _fmt_put(_ansi, pos, m, '\033');
-    pos = _fmt_put(_ansi, pos, m, '[');
-    pos = _fmt_put(_ansi, pos, m, '4');
-    pos = _fmt_put(_ansi, pos, m, '8');
-    pos = _fmt_put(_ansi, pos, m, ';');
-    pos = _fmt_put(_ansi, pos, m, '2');
-    pos = _fmt_put(_ansi, pos, m, ';');
-    pos = _fmt_num(_ansi, pos, m, (uint32_t)r, 10, 0, 0, ' ');
-    pos = _fmt_put(_ansi, pos, m, ';');
-    pos = _fmt_num(_ansi, pos, m, (uint32_t)g, 10, 0, 0, ' ');
-    pos = _fmt_put(_ansi, pos, m, ';');
-    pos = _fmt_num(_ansi, pos, m, (uint32_t)b, 10, 0, 0, ' ');
-    pos = _fmt_put(_ansi, pos, m, 'm');
-
-    if (pos >= m) pos = (uint8_t)(m - 1);
-    _ansi[pos] = '\0';
+    sprintf(_ansi, "\033[48;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
     return _ansi;
 }
-
 #else
 
 
@@ -665,16 +527,15 @@ void debug_setFilenameLineEnabled(bool enabled) {
 
 
 // runtime helpers for 24‑bit ANSI colours; return a pointer to a static buffer
-const char* customTextColor(uint8_t r, uint8_t g, uint8_t b) {
-    static char ansi[24];
-    snprintf(ansi, sizeof(ansi), "\033[38;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
-    return ansi;
+const char* customTextColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    sprintf(_ansi, "\033[38;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
+    return _ansi;
 }
 
-const char* customBgColor(uint8_t r, uint8_t g, uint8_t b) {
-    static char ansi[24];
-    snprintf(ansi, sizeof(ansi), "\033[48;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
-    return ansi;
+const char* customBgColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    sprintf(_ansi, "\033[48;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
+    return _ansi;
 }
-
 #endif

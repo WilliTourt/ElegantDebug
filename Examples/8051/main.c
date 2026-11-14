@@ -30,30 +30,34 @@ void T0_ISR(void) interrupt 1
     debug_tick();
 }
 
-
 void main(void)
 {
+    unsigned int free_mem;
+    int err_code;
+
+    free_mem = 1024;
+    err_code = -3;
+
     UART_Init();
     Timer0_Init();
     debug_init(true, true, true);
     EA = 1;
 
-    debug_log("plain %d", 1);
-    debug_logWithType("TRACE", "\033[90m", "typed %d", 2);
-    debug_info("info %d", 3);
-    debug_ok("ok %d", 4);
-    debug_success("success %d", 5);
-    debug_error("error %d", -6);
-    debug_warning("warn %d", 7);
-    debug_error_fileline("main.c", 42, "efile %d", 8);
-    debug_warning_fileline("main.c", 43, "wfile %d", 9);
-
+    debug_log("Hello from 8051!\r\n");
+    debug_info("System started. Free memory: %d bytes\r\n", free_mem);
+    debug_ok("UART 9600 8N1 initialized\r\n");
+    debug_success("All peripherals ready\r\n");
+    debug_warning("Battery low: %d %%\r\n", (int)15);
+    debug_error("Sensor failed: code = %d\r\n", err_code);
+    debug_logWithType("TRACE", "\033[90m", "tick = %u\r\n", (unsigned int)42);
     debug_setTimestampEnabled(true);
     debug_setColorEnabled(true);
-    debug_setFilenameLineEnabled(false);
+    debug_setFilenameLineEnabled(true);
 
-    debug_log("color %s", customTextColor(255, 128, 0));
-    debug_log("bg %s", customBgColor(0, 0, 255));
+    debug_error_fileline("main.c", 62, "explicit file and line\r\n");
+    debug_warning_fileline("main.c", 63, "explicit file and line\r\n");
+    debug_log("custom fg %s\r\n", customTextColor(255, 128, 0));
+    debug_log("custom bg %s\r\n", customBgColor(0, 0, 255));
 
     while (1);
 }
