@@ -41,7 +41,8 @@
  * - 2026-07-24: Added support for TI MSPM0 series.
  * - 2026-08-09: Optimized RA FSP tx function. Now you MUST call
  *               debug_onTxComplete(uart_callback_args_t *p_args) to set _txDone flag.
- *
+ * - 2026-11-14: Added 8051/STC89C52/STC89C52RC support (USE_8051).
+ *               Define USE_STM32_HAL, USE_RA_FSP, USE_TI_MSPM0_DL, or USE_8051 before including this header.
  *******************************************************************************/
 
 #ifndef __ELEGANT_DEBUG_H
@@ -56,7 +57,7 @@
 // #define USE_STM32_HAL    // STM32Cube HAL
 // #define USE_RA_FSP       // Renesas RA FSP
 // #define USE_TI_MSPM0_DL  // TI MSPM0 DL (Driver Library)
-
+// #define USE_8051         // 8051/STC89C52 (Keil C51, SBUF polling UART)
 
 
 // USB / UART choices:
@@ -69,12 +70,17 @@
 
 /*** Buffer size settings ***********************************************/
 
+//#define DEBUG_BUFFER_LEN 256
+#if defined(USE_8051)
+#define DEBUG_BUFFER_LEN 64     // 8051: keep buffers small */
+#else
 #define DEBUG_BUFFER_LEN 256
+#endif
 
 /************************************************************************/
 
 
-
+/*
 #if defined(USE_STM32_HAL)
     #define DEBUG_PLATFORM_STM32  1
     #define DEBUG_PLATFORM_RA     0
@@ -90,6 +96,31 @@
 #else
     #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL macro before including ElegantDebug.h"
 #endif
+*/
+#if defined(USE_STM32_HAL)
+#define DEBUG_PLATFORM_STM32 1
+#define DEBUG_PLATFORM_RA 0
+#define DEBUG_PLATFORM_TI 0
+#define DEBUG_PLATFORM_8051 0
+#elif defined(USE_RA_FSP)
+#define DEBUG_PLATFORM_STM32 0
+#define DEBUG_PLATFORM_RA 1
+#define DEBUG_PLATFORM_TI 0
+#define DEBUG_PLATFORM_8051 0
+#elif defined(USE_TI_MSPM0_DL)
+#define DEBUG_PLATFORM_STM32 0
+#define DEBUG_PLATFORM_RA 0
+#define DEBUG_PLATFORM_TI 1
+#define DEBUG_PLATFORM_8051 0
+#elif defined(USE_8051)
+#define DEBUG_PLATFORM_STM32 0
+#define DEBUG_PLATFORM_RA 0
+#define DEBUG_PLATFORM_TI 0
+#define DEBUG_PLATFORM_8051 1
+#else
+#error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL / USE_8051 macro before including ElegantDebug.h"
+#endif
+
 
 /*** Platform-specific includes *****************************************/
 
@@ -151,9 +182,27 @@
 
 
 
+#if DEBUG_PLATFORM_8051
+// Keil C51 has no <stdbool.h> / <stdint.h> //
+typedef unsigned char bool;
+typedef unsigned char uint8_t;
+typedef unsigned int  uint16_t;
+typedef unsigned long uint32_t;
+#ifndef __ELEGANT_DEBUG_8051_BOOLDEFS
+#define __ELEGANT_DEBUG_8051_BOOLDEFS
+#define true  1
+#define false 0
+#endif
+#else
 #include <stdbool.h>
-#include <stdarg.h>
 #include <stdint.h>
+#endif
+/*
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+*/
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -230,7 +279,7 @@
 
 
 // RA FSP / TI MSPM0 tick provider (User must feed from timer ISR)
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
 extern volatile uint32_t _debug_tick_ms;
 #endif
 
@@ -256,6 +305,9 @@ void debug_init(uart_instance_t const *uart, bool enable_timestamp, bool enable_
 #elif DEBUG_PLATFORM_TI
 // Initialize the library; MUST be called before other functions.
 void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, bool enable_filename_line);
+#elif DEBUG_PLATFORM_8051
+// 8051 has no UART handle concept: user configures serial port in main().
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
 #endif
 
 #if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
@@ -263,6 +315,9 @@ void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, 
 static inline void debug_tick() {
     _debug_tick_ms++;
 }
+#elif DEBUG_PLATFORM_8051
+// 8051: Keil C51 has no 'inline', so this is a normal function
+void debug_tick();
 #endif
 
 #if DEBUG_PLATFORM_RA
