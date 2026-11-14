@@ -1,7 +1,8 @@
 /*******************************************************************************
  * @file    ElegantDebug.h
  * @version 1.6
- * @brief   ANSI-colored debug logging — STM32 HAL, Renesas RA FSP, TI MSPM0 DL.
+ * @brief   ANSI-colored debug logging — STM32 HAL, Renesas RA FSP, TI MSPM0 DL,
+ *          and 8051 (Keil C51).
  *
  * This header provides a small C API that mirrors the C++
  * `ElegantDebug` class.
@@ -12,16 +13,23 @@
  *  - STM32: STM32Cube HAL UART driver and `HAL_UART_MODULE_ENABLED` required.
  *  - Renesas RA: RASC-generated `hal_data.h` with an SCI UART stack.
  *  - TI MSPM0: sysconfig-generated `ti_msp_dl_config.h` with a UART stack configured.
+ *  - 8051: Keil C51 (or SDCC). The application must initialise the debug UART;
+ *          the port itself needs no extra source file and does not use the C
+ *          library (`SBUF`/`TI` are polled directly).
  * 
  * Usage:
- *   - Define USE_STM32_HAL, USE_RA_FSP, or USE_TI_MSPM0 before including this header.
+ *   - Define USE_STM32_HAL, USE_RA_FSP, USE_TI_MSPM0_DL, or USE_8051 before
+ *     including this header.
  *   - STM32:  pass a `UART_HandleTypeDef*` or enable USB-CDC class.
  *   - RA FSP: pass a `uart_instance_t const*`.
  *   - TI MSPM0: pass a `UART_Regs*`.
+ *   - 8051: no handle is needed (the debug UART is `SBUF`), so `debug_init()`
+ *     only takes the three enable flags. Initialise the UART first.
  *   - Call `log`, `info`, `error`, etc. to print messages.
  *
  * Notes:
- *   - RA FSP / TI MSPM0: call `debug_tick()` from a 1 ms timer ISR for timestamps.
+ *   - RA FSP / TI MSPM0 / 8051: call `debug_tick()` from a 1 ms timer ISR for
+ *     timestamps.
  *   - See repository README for examples and integration instructions.
  *
  * @author:    WilliTourt <willitourt@foxmail.com>
@@ -41,6 +49,11 @@
  * - 2026-07-24: Added support for TI MSPM0 series.
  * - 2026-08-09: Optimized RA FSP tx function. Now you MUST call
  *               debug_onTxComplete(uart_callback_args_t *p_args) to set _txDone flag.
+ * - 2026-11-14: Added 8051/8052 (Keil C51) support. All 8051 code lives in
+ *               `#if DEBUG_PLATFORM_8051` inside this header and
+ *               ElegantDebug.c (C99 types, SBUF/TI hook, literal and
+ *               "label + number" logging); no extra source file is needed.
+ *               The platform is also auto-selected for Keil C51 (__C51__).
  *
  *******************************************************************************/
 
@@ -56,6 +69,7 @@
 // #define USE_STM32_HAL    // STM32Cube HAL
 // #define USE_RA_FSP       // Renesas RA FSP
 // #define USE_TI_MSPM0_DL  // TI MSPM0 DL (Driver Library)
+// #define USE_8051         // 8051 / 8052 (Keil C51, SDCC)
 
 
 
@@ -69,7 +83,13 @@
 
 /*** Buffer size settings ***********************************************/
 
-#define DEBUG_BUFFER_LEN 256
+#if defined(USE_8051) || defined(__C51__)
+    // A 8052-class part has only 256 bytes of internal RAM in total, and the
+    // 8051 port does not format, so this only matters for the other platforms.
+    #define DEBUG_BUFFER_LEN 24
+#else
+    #define DEBUG_BUFFER_LEN 256
+#endif
 
 /************************************************************************/
 
@@ -79,16 +99,26 @@
     #define DEBUG_PLATFORM_STM32  1
     #define DEBUG_PLATFORM_RA     0
     #define DEBUG_PLATFORM_TI     0
+    #define DEBUG_PLATFORM_8051   0
 #elif defined(USE_RA_FSP)
     #define DEBUG_PLATFORM_STM32  0
     #define DEBUG_PLATFORM_RA     1
     #define DEBUG_PLATFORM_TI     0
+    #define DEBUG_PLATFORM_8051   0
 #elif defined(USE_TI_MSPM0_DL)
     #define DEBUG_PLATFORM_STM32  0
     #define DEBUG_PLATFORM_RA     0
     #define DEBUG_PLATFORM_TI     1
+    #define DEBUG_PLATFORM_8051   0
+#elif defined(USE_8051) || defined(__C51__)
+    // Keil C51 only ever targets 8051, so `__C51__` is enough there; defining
+    // USE_8051 explicitly is still the portable/documented way (SDCC needs it).
+    #define DEBUG_PLATFORM_STM32  0
+    #define DEBUG_PLATFORM_RA     0
+    #define DEBUG_PLATFORM_TI     0
+    #define DEBUG_PLATFORM_8051   1
 #else
-    #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL macro before including ElegantDebug.h"
+    #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL / USE_8051 macro before including ElegantDebug.h"
 #endif
 
 /*** Platform-specific includes *****************************************/
@@ -149,13 +179,77 @@
     #endif
 #endif
 
+#if DEBUG_PLATFORM_8051
+    /*** 8051 port layer (kept inside this header: C51 needs no extra file) ***/
+
+    // Keil C51 has no <stdbool.h> and no <stdint.h>; `bool` is mapped to
+    // unsigned char instead of C51's bit type because flags are also passed
+    // as function parameters.
+    #ifndef __ELEGANT_DEBUG_8051_TYPES
+    #define __ELEGANT_DEBUG_8051_TYPES
+
+        typedef unsigned char  uint8_t;
+        typedef signed   char  int8_t;
+        typedef unsigned int   uint16_t;
+        typedef signed   int   int16_t;
+        typedef unsigned long  uint32_t;
+        typedef signed   long  int32_t;
+
+        #ifndef bool
+            #define bool  unsigned char
+        #endif
+        #ifndef true
+            #define true  1
+        #endif
+        #ifndef false
+            #define false 0
+        #endif
+
+    #endif /* __ELEGANT_DEBUG_8051_TYPES */
+
+    // The SFR header is compiler specific — there is no common name:
+    //   Keil C51 : <reg52.h>   (AT89C52 / STC89C52RC register set)
+    //   SDCC     : <8052.h>
+    // Another toolchain, or a project that already includes a vendor header
+    // (STC, Nuvoton, ...), should define ED8051_SKIP_DEVICE_HEADER.
+    #ifndef ED8051_PUTC
+
+        #if !defined(ED8051_SKIP_DEVICE_HEADER)
+            #if defined(__C51__)
+                #include <reg52.h>
+            #elif defined(__SDCC)
+                #include <8052.h>
+            #else
+                #error "8051: include the device header first, or define ED8051_SKIP_DEVICE_HEADER / your own ED8051_PUTC"
+            #endif
+        #endif
+
+        // Polled transmit: the CPU waits ~1 ms per byte at 9600 baud.  Do not
+        // enable the UART RX interrupt with this hook, or handle RX in your own
+        // ISR carefully (it shares the vector with TI).
+        #define ED8051_PUTC(c)                                          \
+            do {                                                        \
+                TI = 0;                                                 \
+                SBUF = (c);                                             \
+                while (!TI) { }                                         \
+                TI = 0;                                                 \
+            } while (0)
+
+    #endif /* ED8051_PUTC */
+#endif
 
 
-#include <stdbool.h>
-#include <stdarg.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+
+#if DEBUG_PLATFORM_8051
+    #include <stdarg.h>
+    #include <string.h>
+#else
+    #include <stdbool.h>
+    #include <stdarg.h>
+    #include <stdint.h>
+    #include <stdio.h>
+    #include <string.h>
+#endif
 
 /* ANSI escape codes for output *****************************************/
 
@@ -229,8 +323,8 @@
 
 
 
-// RA FSP / TI MSPM0 tick provider (User must feed from timer ISR)
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+// RA FSP / TI MSPM0 / 8051 tick provider (User must feed from timer ISR)
+#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
 extern volatile uint32_t _debug_tick_ms;
 #endif
 
@@ -256,6 +350,14 @@ void debug_init(uart_instance_t const *uart, bool enable_timestamp, bool enable_
 #elif DEBUG_PLATFORM_TI
 // Initialize the library; MUST be called before other functions.
 void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, bool enable_filename_line);
+#elif DEBUG_PLATFORM_8051
+// Initialize the library; MUST be called before other functions.
+//
+// There is no handle on 8051: the debug UART is the on-chip serial port
+// (`SBUF`), which the application must have configured before this call
+// (SCON/TMOD/TH1/TR1 — see example_8051/main.c). Output is polled, so keep the
+// UART RX interrupt disabled unless your ISR is UART-TX aware.
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
 #endif
 
 #if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
@@ -265,10 +367,17 @@ static inline void debug_tick() {
 }
 #endif
 
+#if DEBUG_PLATFORM_8051
+// 8051 tick provider (call it from a 1 ms timer interrupt).
+// Keil C51 has no `inline` keyword, so this one is a macro.
+#define debug_tick()   (_debug_tick_ms++)
+#endif
+
 #if DEBUG_PLATFORM_RA
 void debug_onTxComplete(uart_callback_args_t *p_args);
 #endif
 
+#if !DEBUG_PLATFORM_8051
 // Basic formatted log
 void debug_log(const char* format, ...);
 
@@ -284,6 +393,22 @@ void debug_info(const char* format, ...);
 // void debug_logWithType_fileline(const char* file, int line, const char* type, const char* format, ...);
 void debug_error_fileline(const char* file, int line, const char* format, ...);
 void debug_warning_fileline(const char* file, int line, const char* format, ...);
+#else
+// 8051 has no variadic entry point at all: Keil C51 reserves a permanent
+// static argument area in the 128-byte DATA space for *every* variadic
+// function, so one printf-style function plus the formatter frames does not
+// fit (see the port note in ElegantDebug.c).  Use these instead:
+//   - a fixed message with the usual type prefix;
+//   - `label` followed by one unsigned decimal number (counters, ms ticks);
+//   - customTextColor()/customBgColor() still work for 24-bit colours.
+void debug_log_lit(const char* text);
+void debug_info_lit(const char* text);
+void debug_ok_lit(const char* text);
+void debug_success_lit(const char* text);
+void debug_error_lit(const char* file, int line, const char* text);
+void debug_warning_lit(const char* file, int line, const char* text);
+void debug_log_u32(const char* label, unsigned long value);
+#endif
 
 // Runtime setters
 void debug_setTimestampEnabled(bool enabled);
@@ -291,17 +416,28 @@ void debug_setColorEnabled(bool enabled);
 // Enable/disable showing filename:line when using the file/line variants or macros
 void debug_setFilenameLineEnabled(bool enabled);
 
+#if !DEBUG_PLATFORM_8051
 // helper functions generating ANSI escape sequences for variable 24-bit colors
 // they return a pointer to a static string which remains valid until the
 // next call. This allows using them inside printf/format strings just like
 // the `COLOR_CUSTOM`/`BG_COLOR_CUSTOM` macros but with runtime values.
+// Not built on 8051: the two 24-byte static buffers plus the formatter cost
+// more RAM than a 256-byte part can spare.
 const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
+#endif
 
 // Macros to automatically pass caller file/line
+#if DEBUG_PLATFORM_8051
+// Keil C51 is a C89 compiler and has no variadic macros (`__VA_ARGS__`), so the
+// two convenience macros below cannot exist there.  Call the variants directly:
+//     debug_error_fileline(__FILE__, __LINE__, "code = %d", code);
+//     debug_warning_fileline(__FILE__, __LINE__, "battery low");
+#else
 #define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
 #define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
 // #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
+#endif
 
 #ifdef __cplusplus
 }
