@@ -206,3 +206,4 @@ const char* customBgColor(uint8_t r, uint8_t g, uint8_t b) {
     snprintf(ansi, sizeof(ansi), "\033[48;2;%u;%u;%um", (unsigned)r, (unsigned)g, (unsigned)b);
     return ansi;
 }
+
