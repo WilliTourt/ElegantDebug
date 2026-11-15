@@ -17,7 +17,7 @@
  */
 
 #include <reg52.h>
-#include "ElegantDebug.h"
+#include "ElegantDebug_8051.h" // 这里改成了专用头文件
 
 void delay_ms(unsigned int ms) {
     unsigned int i, j;
