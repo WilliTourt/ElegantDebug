@@ -127,6 +127,12 @@ COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
 ### v1.6 - 8051 (2026-11-15)
 
 - **新分支**: 当前分支基于主分支产生。特用于 STC89C52RC 或其他 8051 内核的单片机
+本分支新增对 8051 单片机（如 STC89C52RC）的支持，已针对 51 架构进行底层适配：
+1. **C90 语法隔离**：使用 `#ifdef __C51__` 隔离了 C51 不支持的 C99 变长参数（`va_list` 与 `vsnprintf`），防止编译器报错。
+2. **内存优化**：移除了 `_send` 中的巨型中间数组，改用 `SBUF` 寄存器直接流式发送，彻底解决 `L107 ADDRESS SPACE OVERFLOW`（RAM 溢出）问题。
+3. **限制**：受限于 51 的 128B RAM，暂不支持浮点数 `%f` 打印与动态内存分配。
+
+**使用方式**：在 Keil C51 工程中包含 `ElegantDebug.h` 后，需提供 `SBUF` 的波特率初始化及 `putchar` 接口（或直接使用本库的底层发送逻辑）。调用 `debug_tick()` 挂载到 1ms 定时器即可产生时间戳。
 
 ## 其他
 
