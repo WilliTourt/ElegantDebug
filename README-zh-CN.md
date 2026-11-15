@@ -25,20 +25,27 @@
 
 ## 快速开始
 
-- 输出长度由 `DEBUG_BUFFER_LEN` 宏控制（默认 256）
-- 其他使用方式和主分支相同。
+使用 SDCC 编译。示例针对 STC89C52RC，使用 11.0592 MHz 晶振和 12T 模式。在仓库根目录运行：
 
-*其他使用说明待添加*
-
-### 示例
-
-```c
-// DEMO TO BE ADDED
+```sh
+sdcc -mmcs51 --std-c99 -ISrc-C -c Src-C/ElegantDebug.c -o ElegantDebug.rel
+sdcc -mmcs51 --std-c99 --iram-size 256 --xram-size 0 --code-size 8192 -ISrc-C examples/8051/main.c ElegantDebug.rel -o demo.ihx
 ```
+
+将生成的 Intel HEX 固件烧录到开发板，打开串口终端，设置为 9600、8 数据位、无校验、1 停止位。按复位键后会看到：
+
+```text
+[INFO] UART ready at 9600 baud
+[OK] LED 64
+```
+
+已有串口驱动的工程可以直接复用自己的 `int putchar(int)`。初始化串口后调用 `debug_init(false, false, false)`，然后在主循环里调用日志函数。示例中的轮询发送适用于串口中断关闭的情况；使用中断发送的工程请保留自己的发送完成逻辑。
+
+SDCC 版本通过 `vprintf` 逐字符输出，支持的格式符由 SDCC 标准库决定。需要时间戳时，在 1 ms 定时器中断中调用 `debug_tick()`，再用 `debug_setTimestampEnabled(true)` 开启显示。
 
 ## API
 
-- `void debug_init(/*待添加*/);`
+- `void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);`
   - 初始化库，必须先调用。
 - `static inline void debug_tick(void);`
   - 定时器 ISR 中调用以递增内部毫秒计数器，用于时间戳功能。
@@ -60,9 +67,7 @@
 
 ### 需要注意
 
-- `error` 和 `warning` 函数**不能使用可变参数**，因为它们需要获取调用位置（文件名和行号）。
-
-*其他内容待添加*
+- `debug_error("code=%d\r\n", code)` 和 `debug_warning(...)` 支持格式参数。启用文件名和行号后，宏会自动传入调用位置。
 
 ### 关于ANSI转义码
 

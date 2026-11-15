@@ -4,11 +4,10 @@
  * @brief   ANSI-colored debug logging — Specially used for 8051 (STC89C52RC).
  *
  * Requirements:
- *   - 
+ *   - SDCC mcs51 and an application-provided UART putchar(int).
  *
  * Usage:
- *   - 
- *   - 
+ *   - Initialize the UART, then call debug_init() from the application.
  *
  * Notes:
  *   - call `debug_tick()` from a 1 ms timer ISR for timestamps.
@@ -119,9 +118,9 @@ extern volatile uint32_t _debug_tick_ms;
 
 
 // Initialize the library; MUST be called before other functions.
-void debug_init(/*TODO: Params to be added*/);
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
 
-static inline void debug_tick() {
+static inline void debug_tick(void) {
     _debug_tick_ms++;
 }
 
