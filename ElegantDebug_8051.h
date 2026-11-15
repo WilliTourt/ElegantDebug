@@ -1,47 +1,25 @@
 /*******************************************************************************
  * @file    ElegantDebug.h
- * @version 1.6
- * @brief   ANSI-colored debug logging — STM32 HAL, Renesas RA FSP, TI MSPM0 DL.
- *
- * This header provides a small C API that mirrors the C++
- * `ElegantDebug` class.
- * Output over UART (or USB-CDC on STM32), with optional timestamps and ANSI
- * color prefixes.
+ * @version 1.6 - 8051
+ * @brief   ANSI-colored debug logging — Specially used for 8051 (STC89C52RC).
  *
  * Requirements:
- *  - STM32: STM32Cube HAL UART driver and `HAL_UART_MODULE_ENABLED` required.
- *  - Renesas RA: RASC-generated `hal_data.h` with an SCI UART stack.
- *  - TI MSPM0: sysconfig-generated `ti_msp_dl_config.h` with a UART stack configured.
- * 
+ *   - 
+ *
  * Usage:
- *   - Define USE_STM32_HAL, USE_RA_FSP, or USE_TI_MSPM0 before including this header.
- *   - STM32:  pass a `UART_HandleTypeDef*` or enable USB-CDC class.
- *   - RA FSP: pass a `uart_instance_t const*`.
- *   - TI MSPM0: pass a `UART_Regs*`.
- *   - Call `log`, `info`, `error`, etc. to print messages.
+ *   - 
+ *   - 
  *
  * Notes:
- *   - RA FSP / TI MSPM0: call `debug_tick()` from a 1 ms timer ISR for timestamps.
+ *   - call `debug_tick()` from a 1 ms timer ISR for timestamps.
  *   - See repository README for examples and integration instructions.
  *
- * @author:    WilliTourt <willitourt@foxmail.com>
- * @date:      2026-08-09
+ * @author:    Jian
+ * @date:      2026-11-15
  *
  * @changelog:
- * - 2025-12-10: Initial release.
- * - 2025-12-11: Added support for filename and ln number in warning/error messages.
- *               Allowed custom styles for type prefix in logWithType().
- *               Added more ANSI escape codes for color/style.
- * - 2026-02-22: Added USB-CDC support; can redirect output to USB when
- *               USB_AS_DEBUG_PORT macro set to 1. See C++ counterpart for details.
- * - 2026-03-01: Replaced `COLOR_CUSTOM(r,g,b)` macro implementation with
- *               `customTextColor(r,g,b)` public method for runtime color values.
- *               Background colors too.
- * - 2026-07-16: Added Renesas RA FSP support (USE_RA_FSP).
- * - 2026-07-24: Added support for TI MSPM0 series.
- * - 2026-08-09: Optimized RA FSP tx function. Now you MUST call
- *               debug_onTxComplete(uart_callback_args_t *p_args) to set _txDone flag.
- *
+ * - This version is a branch of main ElegantDebug library, branch date:
+ *   2026-11-15
  *******************************************************************************/
 
 #ifndef __ELEGANT_DEBUG_H
@@ -49,113 +27,36 @@
 
 
 
-/*** Platform & Port selection ******************************************/
-
-// UNCOMMENT one of these macros before including this header:
-
-// #define USE_STM32_HAL    // STM32Cube HAL
-// #define USE_RA_FSP       // Renesas RA FSP
-// #define USE_TI_MSPM0_DL  // TI MSPM0 DL (Driver Library)
-
-
-
-// USB / UART choices:
-// Set to 1 to use USB-CDC as debug port. 0 for UART
-// USB FUNCTION ARE CURRENTLY ONLY AVAILABLE FOR STM32
-#define USB_AS_DEBUG_PORT false
-
-/************************************************************************/
-
-
 /*** Buffer size settings ***********************************************/
 
-#define DEBUG_BUFFER_LEN 256
+// [C51 Adaptation] Reduced buffer size to fit the limited RAM of 8051.
+#define DEBUG_BUFFER_LEN 32
 
 /************************************************************************/
-
-
-
-#if defined(USE_STM32_HAL)
-    #define DEBUG_PLATFORM_STM32  1
-    #define DEBUG_PLATFORM_RA     0
-    #define DEBUG_PLATFORM_TI     0
-#elif defined(USE_RA_FSP)
-    #define DEBUG_PLATFORM_STM32  0
-    #define DEBUG_PLATFORM_RA     1
-    #define DEBUG_PLATFORM_TI     0
-#elif defined(USE_TI_MSPM0_DL)
-    #define DEBUG_PLATFORM_STM32  0
-    #define DEBUG_PLATFORM_RA     0
-    #define DEBUG_PLATFORM_TI     1
-#else
-    #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL macro before including ElegantDebug.h"
-#endif
 
 /*** Platform-specific includes *****************************************/
 
-#if DEBUG_PLATFORM_STM32
-    #include "main.h"
-
-    #if defined(HAL_UART_MODULE_ENABLED)
-        #include "usart.h"
-    #else
-        #error "At least one serial port should be opened"
-    #endif
-
-    #if (USB_AS_DEBUG_PORT == 1)
-        #include "usbd_cdc_if.h"
-    #endif
-
-    #if !defined(__STM32F0xx_HAL_H) && \
-        !defined(__STM32F1xx_HAL_H) && \
-        !defined(__STM32F2xx_HAL_H) && \
-        !defined(__STM32F3xx_HAL_H) && \
-        !defined(__STM32F4xx_HAL_H) && \
-        !defined(__STM32F7xx_HAL_H) && \
-        !defined(__STM32H5xx_HAL_H) && \
-        !defined(__STM32H7xx_HAL_H) && \
-        !defined(__STM32L0xx_HAL_H) && \
-        !defined(__STM32L1xx_HAL_H) && \
-        !defined(__STM32L4xx_HAL_H) && \
-        !defined(__STM32G0xx_HAL_H) && \
-        !defined(__STM32G4xx_HAL_H) && \
-        !defined(__STM32WBxx_HAL_H) && \
-        !defined(__STM32WLxx_HAL_H) && \
-        !defined(__STM32MP1xx_HAL_H) && \
-        !defined(STM32C0xx_HAL_H)
-    #error "This debugging library can only be used with STM32Cube HAL drivers"
-    #endif
-    // If you encounter this compilation error when including this library
-    // in a normal HAL project, it might be because I haven't fully listed
-    // all the macros of the STM32 series. If you encounter any, you are
-    // welcome to submit a PR or issue!
-
+#ifdef __C51__
+    #include <reg52.h>
+    #include <stdarg.h>
+    #include <stdio.h>
+    #include <string.h>
+    typedef unsigned char bool;
+    #define true 1
+    #define false 0
+    typedef unsigned long uint32_t;
+    typedef unsigned int uint16_t;
+    typedef unsigned char uint8_t;
+    #define inline
+    #define DBG_BUF_MEM xdata // Force XDATA to prevent internal RAM overflow
+#else
+    #include <stdbool.h>
+    #include <stdarg.h>
+    #include <stdint.h>
+    #include <stdio.h>
+    #include <string.h>
+    #define DBG_BUF_MEM
 #endif
-
-#if DEBUG_PLATFORM_RA
-    #include "hal_data.h"
-
-    #if !defined(R_SCI_UART_H) && !defined(R_SCI_B_UART_H)
-        #error "At least one SCI UART port should be configured in RASC"
-    #endif
-
-#endif
-
-#if DEBUG_PLATFORM_TI
-    #include "ti_msp_dl_config.h"
-
-    #if !defined(DL_UART_Main_init)
-        #error "At least one UART port should be configured in sysconfig"
-    #endif
-#endif
-
-
-
-#include <stdbool.h>
-#include <stdarg.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 
 /* ANSI escape codes for output *****************************************/
 
@@ -229,45 +130,16 @@
 
 
 
-// RA FSP / TI MSPM0 tick provider (User must feed from timer ISR)
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+// tick provider (User must feed from timer ISR)
 extern volatile uint32_t _debug_tick_ms;
-#endif
 
 
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-
-
-#if DEBUG_PLATFORM_STM32
 // Initialize the library; MUST be called before other functions.
-//
-// If `USB_AS_DEBUG_PORT` is set to 1 (USB-CDC output enabled at compile time),
-// the `huart` pointer is ignored and may be passed as NULL. When using UART as
-// the debug port, a valid `UART_HandleTypeDef *` must be provided or the
-// functions will no-op.
-void debug_init(UART_HandleTypeDef *huart, bool enable_timestamp, bool enable_color, bool enable_filename_line);
-#elif DEBUG_PLATFORM_RA
-// Initialize the library; MUST be called before other functions.
-void debug_init(uart_instance_t const *uart, bool enable_timestamp, bool enable_color, bool enable_filename_line);
-#elif DEBUG_PLATFORM_TI
-// Initialize the library; MUST be called before other functions.
-void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, bool enable_filename_line);
-#endif
+void debug_init(void);
 
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
-// RA FSP tick provider (User must feed from timer ISR)
-static inline void debug_tick() {
-    _debug_tick_ms++;
-}
-#endif
-
-#if DEBUG_PLATFORM_RA
-void debug_onTxComplete(uart_callback_args_t *p_args);
-#endif
+// [C51 Adaptation] C51 does not support the 'inline' keyword, using macro instead.
+#define debug_tick()  (_debug_tick_ms++)
 
 // Basic formatted log
 void debug_log(const char* format, ...);
@@ -299,12 +171,13 @@ const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
 // Macros to automatically pass caller file/line
+// [C51 Adaptation] C51 does not support variadic macros, so they are disabled for 8051.
+#ifndef __C51__
 #define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
 #define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
 // #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
-
-#ifdef __cplusplus
-}
 #endif
+
+
 
 #endif // __ELEGANT_DEBUG_H
