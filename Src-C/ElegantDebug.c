@@ -21,9 +21,12 @@
 
 #include "ElegantDebug.h"
 
+#if DEBUG_PLATFORM_8051
+#define snprintf(buf, size, ...)        sprintf(buf, __VA_ARGS__)
+#define vsnprintf(buf, size, fmt, ap)   vsprintf(buf, fmt, ap)
+#endif
 
-
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
 volatile uint32_t _debug_tick_ms = 0;
 #endif
 
@@ -35,6 +38,8 @@ static UART_HandleTypeDef *_huart = NULL;
 static uart_instance_t const *_uart = NULL;
 #elif DEBUG_PLATFORM_TI
 static UART_Regs *_uart_inst = NULL;
+#elif DEBUG_PLATFORM_8051
+static debug_write_fn _write_fn = 0;
 #endif
 
 static bool _timestamp_enabled = true;
@@ -64,6 +69,13 @@ void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, 
     _color_enabled = enable_color;
     _filename_line_enabled = enable_filename_line;
 }
+#elif DEBUG_PLATFORM_8051
+void debug_init(debug_write_fn write,bool enable_timestamp, bool enable_color, bool enable_filename_line) {
+    _write_fn = write;
+    _timestamp_enabled = enable_timestamp;
+    _color_enabled = enable_color;
+    _filename_line_enabled = enable_filename_line;
+}
 #endif
 
 
@@ -71,7 +83,7 @@ void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, 
 static uint32_t _getTick(void) {
 #if DEBUG_PLATFORM_STM32
     return HAL_GetTick();
-#elif (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+#elif (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
     return _debug_tick_ms;
 #endif
 }
@@ -100,6 +112,8 @@ static void _send(const char* text) {
         if (_uart == NULL || text == NULL) return;
     #elif DEBUG_PLATFORM_TI
         if (_uart_inst == NULL || text == NULL) return;
+    #elif DEBUG_PLATFORM_8051
+        if (text == NULL) return;
     #endif
 
     char out[DEBUG_BUFFER_LEN * 2];
@@ -149,6 +163,10 @@ static void _send(const char* text) {
     #elif DEBUG_PLATFORM_TI
         for (size_t i = 0; out[i] != '\0'; i++) {
             DL_UART_transmitDataBlocking(_uart_inst, (uint8_t)out[i]);
+        }
+    #elif DEBUG_PLATFORM_8051
+        for (uint16_t i = 0; out[i] != '\0'; i++) {
+            putchar(out[i]);
         }
     #endif
 }

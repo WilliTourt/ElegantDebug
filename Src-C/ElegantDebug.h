@@ -87,6 +87,11 @@
     #define DEBUG_PLATFORM_STM32  0
     #define DEBUG_PLATFORM_RA     0
     #define DEBUG_PLATFORM_TI     1
+#elif defined(USE_8051)
+    #define DEBUG_PLATFORM_STM32  0
+    #define DEBUG_PLATFORM_RA     0
+    #define DEBUG_PLATFORM_TI     0
+    #define DEBUG_PLATFORM_8051   1
 #else
     #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL macro before including ElegantDebug.h"
 #endif
@@ -151,11 +156,23 @@
 
 
 
-#include <stdbool.h>
+#if DEBUG_PLATFORM_8051
+    typedef unsigned char bool;
+    #ifndef true
+        #define true  1
+        #define false 0
+        #endif
+    typedef unsigned char  uint8_t;
+    typedef unsigned int   uint16_t;
+    typedef unsigned long  uint32_t;
+#else
+    #include <stdbool.h>
+    #include <stdint.h>
+#endif
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
 
 /* ANSI escape codes for output *****************************************/
 
@@ -230,7 +247,7 @@
 
 
 // RA FSP / TI MSPM0 tick provider (User must feed from timer ISR)
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
 extern volatile uint32_t _debug_tick_ms;
 #endif
 
@@ -256,9 +273,14 @@ void debug_init(uart_instance_t const *uart, bool enable_timestamp, bool enable_
 #elif DEBUG_PLATFORM_TI
 // Initialize the library; MUST be called before other functions.
 void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, bool enable_filename_line);
+#elif DEBUG_PLATFORM_8051
+// Initialize the library; MUST be called before other functions.
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
 #endif
 
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+#if DEBUG_PLATFORM_8051
+#define debug_tick() (_debug_tick_ms++)
+#elif (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
 // RA FSP tick provider (User must feed from timer ISR)
 static inline void debug_tick() {
     _debug_tick_ms++;
@@ -299,8 +321,13 @@ const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
 // Macros to automatically pass caller file/line
+#if DEBUG_PLATFORM_8051
+#define debug_error(...)                debug_error_fileline("", __LINE__, __VA_ARGS__)
+#define debug_warning(...)              debug_warning_fileline("", __LINE__, __VA_ARGS__)
+#else
 #define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
 #define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
+#endif
 // #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
 
 #ifdef __cplusplus
