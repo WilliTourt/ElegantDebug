@@ -2,135 +2,127 @@
 
 > **Language/语言**: [English](README.md) | [简体中文](README-zh-CN.md)
 
+---
+
 ## 简介
 
-- 这是一个轻量的串口调试库，适用，适配8051内核，提供格式化日志输出功能。
-- 特点：
-  - 格式化日志
-  - 可选的时间戳
-  - 可选的 ANSI 颜色输出，包括完全自定义的24位颜色
-  - 便捷的类型前缀（ERROR/WARNING/INFO/OK/SUCCESS）
+轻量的串口调试库，适用于 8051 内核，提供格式化日志输出。
 
-![Example](example.png)
+- 格式化日志
+- 可选时间戳
+- 可选 ANSI 颜色（含 24 位自定义颜色）
+- 类型前缀（ERROR / WARNING / INFO / OK / SUCCESS）
 
-支持错误信息文件名行号输出：
-![Showing Filename and Line](example_fileline.png)
-
-支持自定义颜色输出：
-![Custom Color](example_customcolor.png)
-
-## 文件结构（仓库）
-
-- C 版本放在 `Src-C/`
+![Example](Examples/8051/screenshot.png)
 
 ## 快速开始
 
-- 输出长度由 `DEBUG_BUFFER_LEN` 宏控制（默认 256）
-- 其他使用方式和主分支相同。
-
-*其他使用说明待添加*
-
-### 示例
-
 ```c
-// DEMO TO BE ADDED
+#include "ElegantDebug.h"
+
+void T0_ISR(void) interrupt 1      /* 1ms 定时器中断 */
+{
+    TH0 = 0xFC;  TL0 = 0x66;       /* 11.0592MHz */
+    debug_tick();                  /* 喂时间戳 */
+}
+
+void main(void)
+{
+    UART_Init();                   /* 9600 8N1, TH1 = 0xFD */
+    Timer0_Init();
+    debug_init(true, true, true);  /* 时间戳 / 颜色 / 文件名行号 */
+    EA = 1;
+
+    debug_info("System started. Free memory: %d bytes\r\n", free_mem);
+    debug_error("Sensor failed: code = %d\r\n", -3);
+
+    while (1);
+}
 ```
+
+> 上面这段是 Keil + STC-ISP 的接法。**若你使用其他工具链或芯片，可以删掉这一节**，
+> 只保留「包含头文件 → 调用 debug_init → 在 1ms ISR 中调用 debug_tick」这三步即可。
 
 ## API
 
-- `void debug_init(/*待添加*/);`
-  - 初始化库，必须先调用。
-- `static inline void debug_tick(void);`
-  - 定时器 ISR 中调用以递增内部毫秒计数器，用于时间戳功能。
-- `void debug_log(const char* format, ...);`
-  - 原始格式化输出（无前缀）。
-- `void debug_logWithType(const char* type, const char* style, const char* format, ...);`
-  - 自定义前缀和样式的输出（例如 `"\033[91m"` + `"[ CUSTOM ]"`）。
-- 便捷类型输出（自动包含文件名和行号）：
-  - `void debug_error(const char* format, ...);`
-  - `void debug_warning(const char* format, ...);`
-- 便捷类型输出（无文件名行号）：
-  - `void debug_ok(const char* format, ...);`
-  - `void debug_success(const char* format, ...);`
-  - `void debug_info(const char* format, ...);`
-- 运行时设置：
-  - `void debug_setTimestampEnabled(bool enabled);`
-  - `void debug_setColorEnabled(bool enabled);`
-  - `void debug_setFilenameLineEnabled(bool enabled);`
+| 函数 | 说明 |
+|---|---|
+| `void debug_init(bool ts, bool color, bool fileline)` | 初始化，必须先调用 |
+| `void debug_tick(void)` | 1ms 定时器 ISR 中调用（本分支实现为宏） |
+| `void debug_log(fmt, ...)` | 无前缀输出 |
+| `void debug_logWithType(type, style, fmt, ...)` | 自定义前缀和样式 |
+| `void debug_info/ok/success(fmt, ...)` | 带前缀，无文件名行号 |
+| `void debug_error/warning(fmt, ...)` | 带前缀，**无文件名行号** |
+| `void debug_error/warning_fileline(file, line, fmt, ...)` | 带前缀和文件名行号 |
+| `void debug_setTimestampEnabled/ColorEnabled/FilenameLineEnabled(bool)` | 运行时开关 |
+| `const char* customTextColor/customBgColor(r, g, b)` | 生成 24 位颜色转义序列 |
 
-### 需要注意
+## 与主分支的差异及原因
 
-- `error` 和 `warning` 函数**不能使用可变参数**，因为它们需要获取调用位置（文件名和行号）。
+| 改动 | 主分支 | 本分支 | 为什么必须改 |
+|---|---|---|---|
+| 类型定义 | `#include <stdbool.h>` `<stdint.h>` | 自行 `typedef` | Keil C51 是 C89 编译器，**没有这两个头文件** |
+| `debug_tick()` | `static inline` 函数 | 宏 | C51 **不支持 `inline`**（报 C129） |
+| `debug_error/warning()` | 变参宏，自动传 `__FILE__`/`__LINE__` | 普通函数 | C51 **不支持变参宏** `#define f(...)`（报 C301/C304） |
+| 缓冲区位置 | 各函数内的局部数组 | 模块级共享，放在 `xdata` | C51 **局部变量静态分配**，10 个函数各自的缓冲合计 442 字节，超过 128 字节内部 RAM |
+| 输出方式 | 时间戳+前缀+正文先拼进 `combined` 再发 | 时间戳、前缀、正文**分段直接写 SBUF** | STC89C52RC 的 `xdata` 只有 **256 字节**，装不下 `msg` + `combined` + `out` 三个缓冲 |
+| `DEBUG_BUFFER_LEN` | 256 | 48 | 同上（单条日志上限 47 字符） |
+| 格式化函数 | `vsnprintf` / `snprintf` | `vsprintf` / `sprintf` | C51 的 `STDIO.H` **只有后者** |
 
-*其他内容待添加*
+## 新增的内容及原因
 
-### 关于ANSI转义码
+| 新增 | 为什么加 |
+|---|---|
+| `_putc()` / `_puts()` | 原文件在此处只留了 `// TODO HERE: Transmit data to SBUF`，需要补上逐字节发送 |
+| `_timestamp()` | 原实现用 `sprintf` 拼时间戳，会把 `printf` 模块牵进调用链，8051 的栈不够；改为直接输出数字 |
+| `_put_uint()` | `debug_error_fileline()` 显示 `[文件名:行号]` 时需要打印十进制行号 |
+| `_send_type(prefix, text)` | 替代原来的 `combined` 拼接，省掉一个缓冲区 |
+| `debug_error()` / `debug_warning()` 的函数体 | 头文件里已声明为函数（因为不能用变参宏），必须有实现 |
+| `debug_init()` 的三个参数 | 8051 只有一个串口，`SBUF`/`TI` 是全局寄存器，不需要传入句柄 |
 
-库中的颜色和样式宏均为 ANSI 转义码，如果终端不支持，可以通过运行时设置关闭颜色输出，并停用%s修饰的操作。
+## 已知限制
 
-要为你的输出字符串设置自定义颜色和样式，请用一对 `%s` 来包裹颜色/样式宏和用以清除颜色/样式的宏。例如：
+- **单条日志最长 47 字符**（受 `DEBUG_BUFFER_LEN = 48` 限制）。
+- **必须启用扩展 RAM**：`xdata` 缓冲区需要芯片的「内部扩展RAM」（STC89C52RC 为 256 字节）。
+  烧录时勾选对应选项，或确认所用芯片具备 xdata。
+- **`debug_error()` / `debug_warning()` 不带文件名行号**。需要时用
+  `debug_error_fileline(__FILE__, __LINE__, ...)`。
+- **整型常量作为可变参数时必须强制转换**：C51 未实现 C89 的默认参数提升，
+  能装进 1 字节的常量会按 1 字节存储，而接收方按 16 位 `int` 读取。
 
-```cpp
-log("Hello World! %sI am RED!%s %s%sI am italic and GREEN!%s Now i cleared italic style but still GREEN.%s\n", 
-COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
+  ```c
+  debug_info("value = %d", 1);        /* 8051 上输出错误 */
+  debug_info("value = %d", (int)1);   /* 正确 */
+  ```
+
+  传变量或强制转换表达式则正常。这是编译器行为，`printf`/`sprintf` 同样受影响。
+- **不支持 `%f`**：会链入 C51 浮点库，约占 1.5KB Flash。
+
+## 资源占用（STC89C52RC：8KB Flash / 128B 内部RAM / 256B 扩展RAM）
+
+```
+Program Size: data=80.1 xdata=72 code=3752
+0 Error(s), 0 Warning(s)
 ```
 
-对于24位自定义颜色，请使用 `COLOR_CUSTOM(r,g,b)` 和 `BG_COLOR_CUSTOM(r,g,b)` 宏，其中 `r`、`g`、`b` 为0~255之间的整数。这些宏现在内部调用了运行时辅助函数，因此可以使用变量而非字面常量传递颜色值。
+## 示例
 
-关于 ANSI 转义码的更多信息，请参考：[ANSI escape code - Handwiki](https://handwiki.org/wiki/ANSI_escape_code)
-
-## 常见问题与排查
-
-*待添加*
+见 `Examples/8051/`：Keil 工程、演示程序、截图与烧录说明。
 
 ## 更新日志
 
-### v1.0 (2025-12-10)
-
-- **初始发布**: STM32 Elegant Debug 库首次发布
-- **功能**: 格式化日志输出、时间戳、ANSI颜色、类型前缀等基础功能
-- **支持**: C和C++双版本，适配STM32 HAL库
-
-### v1.1 (2025-12-11)
-
-- **新增**: 支持在错误和警告信息中显示文件名和行号
-  - C版本：通过 `debug_setFilenameLineEnabled(true)` 启用，`debug_error()` 和 `debug_warning()` 自动包含文件名行号
-  - C++版本（C++20及以上）：通过 `setFilenameLineEnabled(true)` 启用，支持 `std::source_location`
-- **新增**: 支持更多的ANSI颜色和样式
-- **改进**: 更新API文档，更准确地反映实际功能
-
-### v1.2 (2026-02-22)
-
-- **新增**: 此库现在支持USB-CDC输出。要使用此功能，只需打开MX配置中的USB_DEVICE中间件，将USB设置为CDC类。然后在此库头文件中将 `USB_AS_DEBUG_PORT` 定义为 `1` 即可。
-
-### v1.3 (2026-03-01)
-
-- **改进**: 现在自定义颜色可以传入运行时变量。这支持了更多样的用法，例如根据数字大小设置对应的渐变颜色（如简介处图）
-
-### v1.4 (2026-07-16)
-
-- **新增**: 支持 Renesas RA FSP 平台（`USE_RA_FSP` 宏）
-  - SCI UART 输出
-  - 独立的时间戳计数器 `_debug_tick_ms`，用户从定时器 ISR 喂入 C 版本 `debug_tick()` / C++ 版本 `ElegantDebug::tick()` 内联函数
-- **新增**: 平台选择机制（`#if defined(USE_STM32_HAL)` / `#elif defined(USE_RA_FSP)`）条件编译
-
-### v1.5 (2026-07-24)
-
-- **新增**: 支持 TI MSPM0 DL 平台（`USE_TI_MSPM0_DL` 宏）
-  - 时间戳与 RA 平台共用 `_debug_tick_ms`，用户从 SysTick ISR 喂入
-  - 平台选择机制扩展至三个平台条件编译
-
-### v1.6 (2026-08-09)
-
-- **改进**: v1.4 和 v1.5 版本中，RA FSP 平台中如连续发送log（中间无手动延时），会导致发送的数据丢失。针对 RA FSP 的非阻塞发送函数，添加了`onTxComplete()`函数，此函数在 TX 完成回调中必须调用来更新发送完成标志。
-
 ### v1.6 - 8051 (2026-11-15)
 
-- **新分支**: 当前分支基于主分支产生。特用于 STC89C52RC 或其他 8051 内核的单片机
+- **新分支**：基于主分支，特用于 STC89C52RC 或其他 8051 内核单片机
+- **实现**：补全 `debug_init()` 与 `_send()` 的 SBUF 发送逻辑
+- **适配**：处理 C89 编译器与有限存储资源带来的限制，详见上文「与主分支的差异及原因」
+- **新增**：`Examples/8051/` 示例工程
+
+（v1.0 ~ v1.6 的历史记录请参见主分支。）
 
 ## 其他
 
-> 此库灵感最初源于学长Zodiak_Jealously的提议 ;p
+> 此库灵感最初源于学长 Zodiak_Jealously 的提议 ;p
 
 WilliTourt 2025.12.10 initial release | willitourt@foxmail.com
 

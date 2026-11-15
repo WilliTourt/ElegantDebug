@@ -1,0 +1,8 @@
+Objects/
+Listings/
+*.LST
+*.OBJ
+*.M51
+*.hex
+*.uvgui.*
+*.uvopt

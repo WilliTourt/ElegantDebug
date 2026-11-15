@@ -29,17 +29,27 @@
 
 /*** Buffer size settings ***********************************************/
 
-#define DEBUG_BUFFER_LEN 256
+#define DEBUG_BUFFER_LEN 48
 
 /************************************************************************/
 
 /*** Platform-specific includes *****************************************/
 
-#include <stdbool.h>
+#include <reg52.h>
 #include <stdarg.h>
-#include <stdint.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifndef true
+    #define true   1
+    #define false  0
+#endif
+
+typedef unsigned char  bool;
+typedef unsigned char  uint8_t;
+typedef unsigned int   uint16_t;
+typedef unsigned long  uint32_t;
 
 /* ANSI escape codes for output *****************************************/
 
@@ -119,11 +129,9 @@ extern volatile uint32_t _debug_tick_ms;
 
 
 // Initialize the library; MUST be called before other functions.
-void debug_init(/*TODO: Params to be added*/);
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
 
-static inline void debug_tick() {
-    _debug_tick_ms++;
-}
+#define debug_tick()    (_debug_tick_ms++)
 
 // Basic formatted log
 void debug_log(const char* format, ...);
@@ -155,8 +163,8 @@ const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
 // Macros to automatically pass caller file/line
-#define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
-#define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
+void debug_error(const char* format, ...);
+void debug_warning(const char* format, ...);
 // #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
 
 
