@@ -1,55 +1,10 @@
-/*******************************************************************************
- * @file    ElegantDebug.h
- * @version 1.6 - 8051
- * @brief   ANSI-colored debug logging ¡ª Specially used for 8051 (STC89C52RC).
- *
- * Requirements:
- *   - A user-provided putchar() implementation (standard printf retargeting).
- *     The UART itself must be initialized by the user, e.g. SCON/TMOD/TH1
- *     for 9600 baud @ 11.0592 MHz.
- *   - Keil C51 (C89): no stdbool.h / stdint.h / snprintf / variadic macros
- *     are available, so this branch defines its own minimal types and avoids
- *     those features entirely.
- *
- * Usage:
- *   - Call debug_init(enable_timestamp, enable_color, enable_filename_line)
- *     before any other debug_* function.
- *   - Call debug_tick() from a 1 ms timer ISR to enable timestamps.
- *   - debug_error/debug_warning macros are NOT available (C89 preprocessor
- *     has no variadic macros); call debug_error_fileline(__FILE__, __LINE__,
- *     ...) / debug_warning_fileline(...) directly instead.
- *   - Avoid %f in format strings: floating-point formatting is very
- *     expensive on 8051.
- *
- * Notes:
- *   - call `debug_tick()` from a 1 ms timer ISR for timestamps.
- *   - See repository README for examples and integration instructions.
- *
- * @author:
- * @date:      2026-XX-XX
- *
- * @changelog:
- * - This version is a branch of main ElegantDebug library, branch date:
- *   2026-11-15
- * - Implemented the 8051 port: unbuffered output via vprintf/putchar
- *   (the 256-byte stack buffers of the main branch do not fit in 8051 RAM
- *   and C51 has no snprintf/vsnprintf).
- *******************************************************************************/
-
 #ifndef __ELEGANT_DEBUG_H
 #define __ELEGANT_DEBUG_H
 
 
-
-/*** Buffer size settings ***********************************************/
-
 #define DEBUG_BUFFER_LEN 256
 
-/************************************************************************/
 
-/*** Platform-specific includes *****************************************/
-
-/* Keil C51 is C89: no stdbool.h / stdint.h. Provide minimal types. */
 typedef unsigned char  bool;
 typedef unsigned char  uint8_t;
 typedef unsigned int   uint16_t;
@@ -57,8 +12,7 @@ typedef unsigned long  uint32_t;
 #define true  1
 #define false 0
 
-/* Keil C51 uses `idata`; SDCC uses `__idata`. Library statics go to idata
-   so the tiny 128-byte DATA segment stays free for the user program. */
+
 #ifdef __SDCC
 #define DEBUG_IDATA __idata
 #else

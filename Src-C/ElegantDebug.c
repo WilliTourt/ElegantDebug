@@ -1,36 +1,3 @@
-/*******************************************************************************
- * @file    ElegantDebug.c
- * @version 1.6
- * @brief   C implementation for ANSI-colored debug logging ¡ª Specially used
- *          for 8051 (STC89C52RC).
- *
- * Implementation notes (8051 constraints):
- *   - 8051 devices have only a few hundred bytes of RAM, so nothing is
- *     buffered: every log function formats straight to vprintf()/putchar().
- *   - Keil C51 has no snprintf/vsnprintf, no variadic macros and its
- *     preprocessor/compiler are C89. Timestamps and file:line prefixes are
- *     emitted with manual decimal conversion (printf-free) ¡ª see the
- *     va_list overlay note below.
- *
- *   IMPORTANT (Keil C51 va_list): the C51 compiler overlays the argument
- *   area of variadic functions with other function calls. Calling
- *   printf()/sprintf() between va_start() and vprintf() corrupts the
- *   argument list (observed as shifted values, e.g. 42 printed as 10752).
- *   The ONLY variadic call in each log function is therefore the final
- *   vprintf(), which runs immediately after va_start().
- *   Also: store int literals in variables before passing them as
- *   variadic arguments (C51 stores small literals in a single byte).
- *
- * Make sure to call `debug_init()` with a valid UART instance before using
- * other functions in this file.
- *
- * @author:
- * @date:
- *
- * @changelog:
- * - (See header file)
- ******************************************************************************/
-
 #include "ElegantDebug.h"
 
 
