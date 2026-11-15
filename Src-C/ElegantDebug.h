@@ -56,7 +56,7 @@
 // #define USE_STM32_HAL    // STM32Cube HAL
 // #define USE_RA_FSP       // Renesas RA FSP
 // #define USE_TI_MSPM0_DL  // TI MSPM0 DL (Driver Library)
-
+#define USE_0851_UART
 
 
 // USB / UART choices:
@@ -69,7 +69,7 @@
 
 /*** Buffer size settings ***********************************************/
 
-#define DEBUG_BUFFER_LEN 256
+#define DEBUG_BUFFER_LEN 64
 
 /************************************************************************/
 
