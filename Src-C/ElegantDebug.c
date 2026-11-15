@@ -90,6 +90,65 @@ void debug_onTxComplete(uart_callback_args_t *p_args) {
 
 static void _send(const char* text) {
 
+static void _send(const char* text)
+{
+#if DEBUG_PLATFORM_8051
+    /* 8051: keep XDATA usage small — the timestamp and the text are sent
+       as two chunks instead of being copied into one big out[] buffer. */
+    if (text == NULL) return;
+    /*
+    if (_timestamp_enabled) {
+        static xdata char tsbuf[32];
+        uint32_t ms = _getTick();
+        uint32_t s = ms / 1000U;
+        uint32_t hours = s / 3600U;
+        uint32_t minutes = (s % 3600U) / 60U;
+        uint32_t seconds = s % 60U;
+        ED_SNPRINTF(tsbuf, sizeof(tsbuf), "[%02lu:%02lu:%02lu.%03lu] ",
+                    (unsigned long)hours, (unsigned long)minutes,
+                    (unsigned long)seconds, (unsigned long)(ms % 1000U));
+        _tx8051(tsbuf);
+    }
+    */      //About this original pattern: Still has a bug which makes the Unix timestamp stand still and couldn't run as the natural time goes by normally.
+     if (_timestamp_enabled) {
+        /* Keil C51's vsprintf is unreliable with format strings such as "%02lu" (width + long int) 
+        (four longs on the reentrant stack read misaligned values on real hardware),
+        so use small integers instead and manually construct the timestamp without going through printf. */
+        static xdata char tsbuf[24];
+        uint32_t ms = _getTick();
+        uint32_t s = ms / 1000U;
+        unsigned int hours   = (unsigned int)(s / 3600U);        
+        unsigned int minutes = (unsigned int)((s % 3600U) / 60U);
+        unsigned int seconds = (unsigned int)(s % 60U);
+        unsigned int msec    = (unsigned int)(ms % 1000U);
+        unsigned char ti = 0;
+
+        tsbuf[ti++] = '[';
+        if (hours >= 1000U) hours %= 1000U;      /* 49.7 days later, rewound */
+        if (hours >= 100U) {                     /* Align with the original %02lu semantics: pad to three digits if necessary. */
+            tsbuf[ti++] = '0' + (unsigned char)(hours / 100U % 10U);
+            tsbuf[ti++] = '0' + (unsigned char)(hours / 10U % 10U);
+            hours %= 100U;
+        }
+        tsbuf[ti++] = '0' + (unsigned char)(hours / 10U);
+        tsbuf[ti++] = '0' + (unsigned char)(hours % 10U);
+        tsbuf[ti++] = ':';
+        tsbuf[ti++] = '0' + (unsigned char)(minutes / 10U);
+        tsbuf[ti++] = '0' + (unsigned char)(minutes % 10U);
+        tsbuf[ti++] = ':';
+        tsbuf[ti++] = '0' + (unsigned char)(seconds / 10U);
+        tsbuf[ti++] = '0' + (unsigned char)(seconds % 10U);
+        tsbuf[ti++] = '.';
+        tsbuf[ti++] = '0' + (unsigned char)(msec / 100U);
+        tsbuf[ti++] = '0' + (unsigned char)(msec / 10U % 10U);
+        tsbuf[ti++] = '0' + (unsigned char)(msec % 10U);
+        tsbuf[ti++] = ']';
+        tsbuf[ti++] = ' ';
+        tsbuf[ti] = '\0';
+        _tx8051(tsbuf);
+    }
+    _tx8051(text);
+#else
     #if DEBUG_PLATFORM_STM32
         #if (USB_AS_DEBUG_PORT == 1)
             if (text == NULL) return;
