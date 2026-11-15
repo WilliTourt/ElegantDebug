@@ -4,18 +4,26 @@
  * @brief   ANSI-colored debug logging — Specially used for 8051 (STC89C52RC).
  *
  * Requirements:
- *   - 
+ *   - Keil C51 (C90), SMALL memory model. Tested with C51 V9.54 / BL51 V6.22.
+ *   - A UART already initialized by the application (9600 8N1 at 11.0592 MHz
+ *     is the usual setup). The library does not configure the baud rate.
+ *   - A TX path: by default ElegantDebug.c implements `char putchar(char c)`
+ *     with SBUF/TI polling. If the project already redirects `putchar`,
+ *     define DEBUG_EXTERNAL_PUTCHAR in the project's C51 preprocessor symbols.
  *
  * Usage:
- *   - 
- *   - 
+ *   - debug_init(true, true, false);  // timestamp / color / file:line
+ *   - call debug_tick() from a 1 ms timer ISR for timestamps.
+ *   - See README-zh-CN.md / README.md for examples and integration instructions.
  *
  * Notes:
- *   - call `debug_tick()` from a 1 ms timer ISR for timestamps.
- *   - See repository README for examples and integration instructions.
+ *   - C51 has no <stdbool.h>, no <stdint.h>, no `inline` and no variadic
+ *     macros; the types and the tick helper are provided here.
+ *   - Output is streamed through putchar()/vprintf(), so no message buffer is
+ *     allocated and DEBUG_BUFFER_LEN does not reserve RAM.
  *
- * @author:    
- * @date:      2026-XX-XX
+ * @author:    Fan Yaoyang
+ * @date:      2026-11-15
  *
  * @changelog:
  * - This version is a branch of main ElegantDebug library, branch date:
@@ -29,15 +37,28 @@
 
 /*** Buffer size settings ***********************************************/
 
+/* Kept for source compatibility with the main branch. This port formats and
+ * transmits on the fly, so no buffer of this size is allocated. */
 #define DEBUG_BUFFER_LEN 256
 
 /************************************************************************/
 
 /*** Platform-specific includes *****************************************/
 
-#include <stdbool.h>
+/* Keil C51 (C90) has neither <stdbool.h> nor <stdint.h>.
+ * C51 data sizes: char = 8 bit, int = 16 bit, long = 32 bit. */
+typedef unsigned char bool;
+typedef unsigned char uint8_t;
+typedef unsigned long uint32_t;
+
+#ifndef true
+#define true  1
+#endif
+#ifndef false
+#define false 0
+#endif
+
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -113,17 +134,21 @@
 
 
 
-// tick provider (User must feed from timer ISR)
-extern volatile uint32_t _debug_tick_ms;
-
-
+// tick provider (User must feed from timer ISR).
+// Explicitly `data`: it is incremented from the 1 ms ISR and must stay
+// directly addressable, independent of the project's memory model. The
+// declaration and the definition in ElegantDebug.c must use the same memory
+// type, otherwise BL51 reports L103.
+extern volatile uint32_t data _debug_tick_ms;
 
 // Initialize the library; MUST be called before other functions.
-void debug_init(/*TODO: Params to be added*/);
+// The UART itself must be initialized by the application beforehand.
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
 
-static inline void debug_tick() {
-    _debug_tick_ms++;
-}
+// C51 has no `inline`; a macro keeps the ISR cost down to one 32-bit
+// increment. Call it from a 1 ms timer ISR:
+//     void Timer0_ISR(void) interrupt 1 { ... debug_tick(); }
+#define debug_tick()        (_debug_tick_ms++)
 
 // Basic formatted log
 void debug_log(const char* format, ...);
@@ -136,7 +161,11 @@ void debug_ok(const char* format, ...);
 void debug_success(const char* format, ...);
 void debug_info(const char* format, ...);
 
-// Variants that accept file and line (used by macros to automatically pass __FILE__/__LINE__)
+// Convenience helpers with the type prefix but without file/line
+void debug_error(const char* format, ...);
+void debug_warning(const char* format, ...);
+
+// Variants that accept file and line
 // void debug_logWithType_fileline(const char* file, int line, const char* type, const char* format, ...);
 void debug_error_fileline(const char* file, int line, const char* format, ...);
 void debug_warning_fileline(const char* file, int line, const char* format, ...);
@@ -144,7 +173,7 @@ void debug_warning_fileline(const char* file, int line, const char* format, ...)
 // Runtime setters
 void debug_setTimestampEnabled(bool enabled);
 void debug_setColorEnabled(bool enabled);
-// Enable/disable showing filename:line when using the file/line variants or macros
+// Enable/disable showing filename:line when using the file/line variants
 void debug_setFilenameLineEnabled(bool enabled);
 
 // helper functions generating ANSI escape sequences for variable 24-bit colors
@@ -154,10 +183,10 @@ void debug_setFilenameLineEnabled(bool enabled);
 const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
-// Macros to automatically pass caller file/line
-#define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
-#define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
-// #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
+// C51 (C90) has no variadic macros, so debug_error() and debug_warning()
+// cannot capture __FILE__/__LINE__ automatically as they do on the main
+// branch. Call debug_error_fileline(__FILE__, __LINE__, ...) /
+// debug_warning_fileline(__FILE__, __LINE__, ...) when the location is needed.
 
 
 
