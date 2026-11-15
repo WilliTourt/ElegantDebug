@@ -23,7 +23,7 @@
 
 
 
-#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+#if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
 volatile uint32_t _debug_tick_ms = 0;
 #endif
 
@@ -64,6 +64,12 @@ void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, 
     _color_enabled = enable_color;
     _filename_line_enabled = enable_filename_line;
 }
+#elif DEBUG_PLATFORM_8051
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line) {
+    _timestamp_enabled = enable_timestamp;
+    _color_enabled = enable_color;
+    _filename_line_enabled = enable_filename_line;
+}
 #endif
 
 
@@ -71,7 +77,7 @@ void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, 
 static uint32_t _getTick(void) {
 #if DEBUG_PLATFORM_STM32
     return HAL_GetTick();
-#elif (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
+#elif (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
     return _debug_tick_ms;
 #endif
 }
