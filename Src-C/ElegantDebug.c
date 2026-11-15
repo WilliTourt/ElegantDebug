@@ -35,6 +35,7 @@ static UART_HandleTypeDef *_huart = NULL;
 static uart_instance_t const *_uart = NULL;
 #elif DEBUG_PLATFORM_TI
 static UART_Regs *_uart_inst = NULL;
+#elif DEBUG_PLATFORM_0851
 #endif
 
 static bool _timestamp_enabled = true;
@@ -64,6 +65,13 @@ void debug_init(UART_Regs *uart_inst, bool enable_timestamp, bool enable_color, 
     _color_enabled = enable_color;
     _filename_line_enabled = enable_filename_line;
 }
+#elif DEBUG_PLATFORM_8051
+void debug_int(unsigned char enable_timestamp,unsigned char enable_color,unsigned char enable_filename_line)
+{
+_timestamp_enabled=enable_timestamp;
+_color_enabled=enable_color;
+_filename_line_enabled=enable_filename_line;
+}
 #endif
 
 
@@ -73,6 +81,8 @@ static uint32_t _getTick(void) {
     return HAL_GetTick();
 #elif (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI)
     return _debug_tick_ms;
+    #elif DEBUG_PLATFORM_0851
+    return 0;
 #endif
 }
 
@@ -147,8 +157,17 @@ static void _send(const char* text) {
                            (uint32_t)strlen(out));
         #endif
     #elif DEBUG_PLATFORM_TI
-        for (size_t i = 0; out[i] != '\0'; i++) {
+        for (i = 0; out[i] != '\0'; i++) {
             DL_UART_transmitDataBlocking(_uart_inst, (uint8_t)out[i]);
+            #elif DEBUG_PLATFORM_0851
+            unsigned int i=0;
+            while(text[i]!='\0')
+                {
+                    SBUF=text[i];
+                    while(TI==0);
+                    TI=0;
+                    i++;
+                }
         }
     #endif
 }
