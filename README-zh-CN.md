@@ -18,11 +18,11 @@ STC89C52RC @ 11.0592 MHz 实机输出（VS Code 串口监视器，9600 8N1）：
 ## 文件结构（仓库）
 
 - C 版本放在 `Src-C/`
+- Keil 示例工程（STC89C52RC，uvproj + STARTUP.A51）在 `Examples/8051/`
 
 ## 快速开始
 
 - 环境：Keil C51（C90），SMALL 内存模式。实测 STC89C52RC @ 11.0592 MHz，串口 9600 8N1。
-- `DEBUG_BUFFER_LEN`（默认 256）只为和主分支保持源码兼容。本移植版是边格式化边发送，**不会分配这么大的缓冲区**。
 - API 名称、颜色宏、类型前缀和主分支保持一致；差异见下面的「需要注意」。
 
 ### 1. 把文件加入工程
@@ -109,6 +109,16 @@ void main(void)
 | CODE | 3863 字节（约 3.8 KB） |
 
 C51 的 printf 机制是 8051 上做格式化输出的固定代价：`?PR?PRINTF`（860 字节）加 `?C?LIB_CODE`（450 字节）合计约 1.3 KB CODE，printf 的 `?BYTE` 参数块占 20 字节 DATA（只调用 printf 的测试程序链接结果是 `data=30`、`code=1069`）。库自身的静态数据是 8 字节。RAM 紧张就把 `customTextColor()` / `customBgColor()` 里的 `xdata` 缓冲挪走或改小。
+
+上面那 48 字节 XDATA 落在**扩展 RAM**里。STC89C52RC 有 256 字节内部扩展 RAM，但**烧录时必须在 STC-ISP 里勾上「内部扩展RAM可用」**；不勾的话这片地址读回来是 `0xFF`，颜色字符串会变成乱码或者干脆不结束。不想动这个开关，就把两个颜色缓冲改小或删掉。
+
+### 6.1 打印是要花时间的
+
+9600 8N1 每字节约 **1.04 ms**，一条 40 字符的日志差不多 **42 ms**。`debug_log()` 是轮询发送，调用的这段时间里主循环是停着的——一次日志就等于一次 42 ms 的 delay。所以：
+
+- 日志要短。想看变量就用一行几个数，别把整段文本推上去。
+- 别在定时器回调或者高频中断里打印。
+- 每秒钟刷一条长日志，等于主循环每秒卡一次；要求「主循环不许出现 delay」的场合尤其注意。
 
 ### 7. 可变参数函数的 DATA 开销
 
@@ -212,7 +222,7 @@ void main(void)
 - **一次调用别传太多参数**：C51 为每个可变参数函数只留约 18 字节的 `?BYTE` 空间，一个 `char*` 占 3 字节。参数超了会覆盖相邻变量（输出乱码或死机）。建议每次调用控制在 4~5 个参数以内，长行拆开打。
 - **小整数字面量先存进 `int` 再传给 `%d`/`%u`**：C51 把小的字面量按一字节传递，而 `%d` 读两字节，`2` 可能打印成 `553`。写成 `int code = 2; debug_log("%d", code);`。
 - C51 的 printf 支持 `%d`、`%u`、`%x`、`%c`、`%s`、`%lu` 和宽度/精度，但**浮点非常吃 Flash**。避免 `%f`，把数值乘 10^n 后用整数打印。
-- `DEBUG_BUFFER_LEN` 在本移植版中不分配内存：输出边格式化边发送，所以再长的日志也不会被截断，也不会有缓冲区溢出。
+- 输出边格式化边发送，所以再长的日志也不会被截断，也不会有缓冲区溢出。
 - 本分支没有平台条件编译。`DEBUG_EXTERNAL_PUTCHAR` 只决定 `putchar` 由谁提供。
 
 ### 关于ANSI转义码
@@ -250,6 +260,8 @@ COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
   - 定时器 ISR 里没有调用 `debug_tick()`。
 - **传字面量给 `%d` 输出乱码**
   - C51 把小整数字面量按一字节传递，而 `%d` 读两字节，`2` 可能打印成 `553`。先存进 `int`：`int code = 2; debug_log("%d", code);`。
+- **自定义颜色输出乱码，或者整行卡住不结束**
+  - STC-ISP 烧录时没勾「内部扩展RAM可用」，48 字节 `xdata` 读回 `0xFF`，字符串找不到结尾。
 
 ## 更新日志
 
@@ -298,7 +310,7 @@ COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
 - **实现说明**:
   - `debug_init()` 接收三个开关（时间戳 / 颜色 / 文件名行号），串口由应用初始化
   - 默认 `putchar()` 写 `SBUF` 并轮询 `TI`；工程已有 `putchar` 时定义 `DEBUG_EXTERNAL_PUTCHAR`
-  - 输出经 `vprintf()` + `putchar()` 流式发送，不分配消息缓冲，`DEBUG_BUFFER_LEN` 不占 RAM
+  - 输出经 `vprintf()` + `putchar()` 流式发送，不分配消息缓冲
   - `debug_tick()` 改为宏（C51 没有 `inline`）；`_getTick()` 连读两次 32 位计数，避免被 ISR 撕裂
   - `debug_error()` / `debug_warning()` 是普通可变参数函数（C51 没有可变参数宏），需要 `__FILE__` / `__LINE__` 时用 `*_fileline()` 变体
   - 时间戳和十进制数字不走 `printf`，避免每个调用点再多一块 DATA 参数区

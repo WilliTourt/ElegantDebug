@@ -20,7 +20,7 @@
  *   - C51 has no <stdbool.h>, no <stdint.h>, no `inline` and no variadic
  *     macros; the types and the tick helper are provided here.
  *   - Output is streamed through putchar()/vprintf(), so no message buffer is
- *     allocated and DEBUG_BUFFER_LEN does not reserve RAM.
+ *     allocated.
  *
  * @author:    Fan Yaoyang
  * @date:      2026-11-15
@@ -35,28 +35,24 @@
 
 
 
-/*** Buffer size settings ***********************************************/
-
-/* Kept for source compatibility with the main branch. This port formats and
- * transmits on the fly, so no buffer of this size is allocated. */
-#define DEBUG_BUFFER_LEN 256
-
-/************************************************************************/
-
 /*** Platform-specific includes *****************************************/
 
 /* Keil C51 (C90) has neither <stdbool.h> nor <stdint.h>.
- * C51 data sizes: char = 8 bit, int = 16 bit, long = 32 bit. */
+ * C51 data sizes: char = 8 bit, int = 16 bit, long = 32 bit.
+ * `bool`, `true` and `false` are keywords in C++, so they are only defined
+ * for C translation units. */
+#ifndef __cplusplus
 typedef unsigned char bool;
-typedef unsigned char uint8_t;
-typedef unsigned long uint32_t;
-
 #ifndef true
 #define true  1
 #endif
 #ifndef false
 #define false 0
 #endif
+#endif
+typedef unsigned char uint8_t;
+typedef unsigned int  uint16_t;
+typedef unsigned long uint32_t;
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -132,7 +128,9 @@ typedef unsigned long uint32_t;
 
 /************************************************************************/
 
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // tick provider (User must feed from timer ISR).
 // Explicitly `data`: it is incremented from the 1 ms ISR and must stay
@@ -187,6 +185,10 @@ const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 // cannot capture __FILE__/__LINE__ automatically as they do on the main
 // branch. Call debug_error_fileline(__FILE__, __LINE__, ...) /
 // debug_warning_fileline(__FILE__, __LINE__, ...) when the location is needed.
+
+#ifdef __cplusplus
+}
+#endif
 
 
 

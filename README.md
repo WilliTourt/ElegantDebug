@@ -18,11 +18,11 @@ Captured on an STC89C52RC @ 11.0592 MHz (VS Code Serial Monitor, 9600 8N1): time
 ## Repository layout
 
 - C implementation is in `Src-C/`
+- Keil example project (STC89C52RC, uvproj + STARTUP.A51) is in `Examples/8051/`
 
 ## Quick Start
 
 - Environment: Keil C51 (C90), SMALL memory model. Tested on STC89C52RC @ 11.0592 MHz, UART 9600 8N1.
-- `DEBUG_BUFFER_LEN` (default 256) is kept for source compatibility with the main branch only. This port formats and transmits on the fly and **does not allocate a buffer of that size**.
 - The API names, color macros and type prefixes are the same as on the main branch; the differences are listed under Notes below.
 
 ### 1. Add the files to your project
@@ -109,6 +109,16 @@ Measured with Keil C51 v9.54 / BL51 V6.22, SMALL model, the library plus a demo 
 | CODE | 3863 bytes (about 3.8 KB) |
 
 The C51 printf machinery is the fixed price of formatted output on an 8051: `?PR?PRINTF` (860 B) and `?C?LIB_CODE` (450 B) together take about 1.3 KB of CODE, and printf's `?BYTE` block is 20 bytes of DATA (a printf-only test program links at `data=30`, `code=1069`). The library's own static data is 8 bytes. If RAM is tight, move or shrink the `xdata` buffers in `customTextColor()` / `customBgColor()`.
+
+Those 48 bytes of XDATA live in **extended RAM**. An STC89C52RC has 256 bytes of internal extended RAM, but you must **tick "内部扩展RAM可用" in STC-ISP when flashing**; without it that address range reads back as `0xFF`, so the color strings turn into garbage or never terminate. If you would rather not touch that switch, shrink or delete the two color buffers.
+
+### 6.1 Printing costs time
+
+At 9600 8N1 one byte takes about **1.04 ms**, so a 40-character line costs roughly **42 ms**. `debug_log()` transmits by polling, and the main loop is stopped for the whole call — one log line is one 42 ms delay. Therefore:
+
+- Keep lines short. Print a few numbers, not a paragraph.
+- Do not print from timer callbacks or high-rate interrupts.
+- One long line per second stalls the main loop once per second; this matters in any project that forbids delays in the main loop.
 
 ### 7. About the DATA cost of variadic functions
 
@@ -212,7 +222,7 @@ void main(void)
 - **Do not pass too many arguments to one call**: C51 reserves only about 18 bytes of `?BYTE` space for the variadic arguments of each function, and a `char*` takes 3 bytes. Extra arguments overwrite adjacent variables (garbage output or a crash). Keep each call to 4..5 arguments and split long lines.
 - **Store small integer literals in `int` variables before passing them to `%d`/`%u`**: C51 passes a small literal as one byte while `%d` reads two, so `2` can print as `553`. Write `int code = 2; debug_log("%d", code);`.
 - C51's printf supports `%d`, `%u`, `%x`, `%c`, `%s`, `%lu` and width/precision, but **floating point is very expensive in Flash**. Avoid `%f`; scale the value by 10^n and print an integer instead.
-- `DEBUG_BUFFER_LEN` does not allocate memory on this port: output is formatted and transmitted on the fly, so a long log is never truncated and cannot overflow a message buffer.
+- Output is formatted and transmitted on the fly, so a long log is never truncated and cannot overflow a message buffer.
 - There is no platform conditional compilation on this branch. `DEBUG_EXTERNAL_PUTCHAR` only selects who provides `putchar`.
 
 ### About ANSI Escape Codes
@@ -250,6 +260,8 @@ For more information about ANSI escape codes, refer to: [ANSI escape code - Hand
   - `debug_tick()` is not called from the timer ISR.
 - **Garbage output when passing literals to `%d`**
   - C51 passes a small integer literal as one byte while `%d` reads two, so `2` can print as `553`. Store the value in an `int` first: `int code = 2; debug_log("%d", code);`.
+- **Custom colors print garbage, or a line never terminates**
+  - "内部扩展RAM可用" was not ticked in STC-ISP, so the 48 bytes of `xdata` read back as `0xFF` and the string has no terminator.
 
 ## Changelog
 
@@ -298,7 +310,7 @@ For more information about ANSI escape codes, refer to: [ANSI escape code - Hand
 - **Implementation notes**:
   - `debug_init()` takes three flags (timestamp / color / filename:line); the UART is initialized by the application
   - The default `putchar()` writes `SBUF` and polls `TI`; define `DEBUG_EXTERNAL_PUTCHAR` if the project already has one
-  - Output is streamed through `vprintf()` and `putchar()`; no message buffer is allocated, so `DEBUG_BUFFER_LEN` does not reserve RAM
+  - Output is streamed through `vprintf()` and `putchar()`; no message buffer is allocated
   - `debug_tick()` is a macro (C51 has no `inline`); `_getTick()` reads the 32-bit tick twice to avoid a torn value from the ISR
   - `debug_error()` / `debug_warning()` are plain variadic functions, since C51 has no variadic macros; use the `*_fileline()` variants for `__FILE__` / `__LINE__`
   - Timestamp and decimal numbers are sent without `printf` to avoid an extra DATA parameter block per call site

@@ -4,9 +4,7 @@
  * @brief   C implementation for ANSI-colored debug logging — Specially used for 8051 (STC89C52RC).
  *
  * Output is formatted with the Keil C51 `vprintf()` and sent one byte at a
- * time through `putchar()`. The skeleton's `char msg[DEBUG_BUFFER_LEN]` and
- * `char out[DEBUG_BUFFER_LEN * 2]` buffers are deliberately not used: they
- * would need 512 bytes, and an STC89C52RC has 256 bytes of RAM in total.
+ * time through `putchar()`, so no message buffer is allocated.
  *
  * C51 also reserves an 18..26 byte static parameter block (?BYTE) for every
  * variadic function. In the SMALL model those blocks live in DATA and are
@@ -28,10 +26,6 @@
 #include "ElegantDebug.h"
 
 
-
-/* ------------------------------------------------------------------------- */
-/* TX path                                                                    */
-/* ------------------------------------------------------------------------- */
 
 /* Default 8051 transmitter: poll TI after writing SBUF.
  *
@@ -117,7 +111,7 @@ static uint32_t _getTick(void) {
  * block in the 128-byte DATA area, and on 8051 that runs out. */
 static void _sendUInt(unsigned int v) {
     char buf[6];
-    char n = 0;
+    unsigned char n = 0;
 
     if (v == 0U) {
         putchar('0');
@@ -149,10 +143,14 @@ static void _sendUInt3(unsigned int v) {
 }
 
 /* Send the "[hh:mm:ss.mmm] " prefix (if enabled).
- * 16-bit arithmetic on purpose: formatting a 32-bit value with printf is
- * much bigger, and 18 hours of uptime still fit in 16 bits of seconds. */
+ * Formatting a 32-bit value with printf is much bigger, so the digits are
+ * produced by hand. The division stays in 32 bits on purpose: `unsigned int`
+ * is only 16 bits on C51, so narrowing `ms / 1000` to unsigned int first would
+ * wrap the clock at 65535 s (18 h 12 min). Only the hour and the remaining
+ * 0..3599 s are narrowed, which fits. */
 static void _sendTimestamp(void) {
     uint32_t ms;
+    uint32_t secs;
     unsigned int s;
     unsigned int hours;
 
@@ -161,8 +159,9 @@ static void _sendTimestamp(void) {
     }
 
     ms = _getTick();
-    s = (unsigned int)(ms / 1000UL);
-    hours = s / 3600U;
+    secs = ms / 1000UL;
+    hours = (unsigned int)(secs / 3600UL);
+    s = (unsigned int)(secs % 3600UL);
 
     putchar('[');
     if (hours < 100U) {
@@ -171,7 +170,7 @@ static void _sendTimestamp(void) {
         _sendUInt(hours);
     }
     putchar(':');
-    _sendUInt2((s % 3600U) / 60U);
+    _sendUInt2(s / 60U);
     putchar(':');
     _sendUInt2(s % 60U);
     putchar('.');
@@ -219,22 +218,22 @@ void debug_logWithType(const char* type, const char* style, const char* format, 
     }
 
     _sendTimestamp();
-    _send(BOLD);
-    _send(style);
+    if (_color_enabled) {
+        _send(BOLD);
+        _send(style);
+    }
     putchar('[');
     _send(type);
     putchar(']');
-    _send(CLR);
+    if (_color_enabled) {
+        _send(CLR);
+    }
     putchar(' ');
 
     va_start(args, format);
     vprintf(format, args);
     va_end(args);
 }
-
-// void debug_logWithType_fileline(const char* file, int line, const char* type, const char* format, ...) {
-//     ... same as main branch; see debug_error_fileline for the 8051 version
-// }
 
 void debug_error_fileline(const char* file, int line, const char* format, ...) {
     va_list args;

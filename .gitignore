@@ -1,0 +1,15 @@
+# Keil uVision build output
+Examples/8051/Objects/
+Examples/8051/Listings/
+Examples/8051/*.uvgui*
+Examples/8051/*.uvopt
+Examples/8051/*.bak
+*.uvgui.*
+*.uvopt
+*.hex
+*.obj
+*.lst
+*.m51
+*.lnp
+*.build_log.htm
+__pycache__/
