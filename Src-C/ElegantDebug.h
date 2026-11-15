@@ -77,8 +77,11 @@
 
 #if defined(USE_STM32_HAL)
     #define DEBUG_PLATFORM_STM32  1
+#elif defined(USE_8051_UART)
+    #deifine DEBUG_PLATFORM_STM32 0
     #define DEBUG_PLATFORM_RA     0
     #define DEBUG_PLATFORM_TI     0
+    #define DEBUG_PLATFORM_0851 1
 #elif defined(USE_RA_FSP)
     #define DEBUG_PLATFORM_STM32  0
     #define DEBUG_PLATFORM_RA     1
@@ -92,7 +95,7 @@
 #endif
 
 /*** Platform-specific includes *****************************************/
-
+#define DEBUG_PLATFORM_8051 1
 #if DEBUG_PLATFORM_STM32
     #include "main.h"
 
@@ -151,9 +154,9 @@
 
 
 
-#include <stdbool.h>
+//#include <stdbool.h>
 #include <stdarg.h>
-#include <stdint.h>
+//#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
