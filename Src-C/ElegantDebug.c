@@ -280,7 +280,6 @@ void debug_setFilenameLineEnabled(bool enabled) {
 }
 
 
-
 // runtime helpers for 24‑bit ANSI colours; return a pointer to a static buffer
 const char* customTextColor(uint8_t r, uint8_t g, uint8_t b) {
     static char ansi[24];
