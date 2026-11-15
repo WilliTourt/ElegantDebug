@@ -14,8 +14,8 @@
  *   - call `debug_tick()` from a 1 ms timer ISR for timestamps.
  *   - See repository README for examples and integration instructions.
  *
- * @author:    
- * @date:      2026-XX-XX
+ * @author:    daitycos
+ * @date:      2026-11-15
  *
  * @changelog:
  * - This version is a branch of main ElegantDebug library, branch date:
@@ -35,15 +35,20 @@
 
 /*** Platform-specific includes *****************************************/
 
-#include <stdbool.h>
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
+typedef unsigned char bool;
+typedef unsigned char uint8_t;
+typedef unsigned long uint32_t;
+
+#define true 1
+#define false 0
+
 /* ANSI escape codes for output *****************************************/
 
-// Colors for texts
+/* Colors for texts */
 #define COLOR_DARK_RED      "\033[31m"
 #define COLOR_DARK_GREEN    "\033[32m"
 #define COLOR_DARK_YELLOW   "\033[33m"
@@ -60,10 +65,10 @@
 #define COLOR_CYAN          "\033[96m"
 #define COLOR_WHITE         "\033[97m"
 
-// Custom 24-bit colors for text.
+/* Custom 24-bit colors for text. */
 #define COLOR_CUSTOM(r,g,b) customTextColor(r,g,b)
 
-// Background colors
+/* Background colors */
 #define BG_RED              "\033[41m"
 #define BG_GREEN            "\033[42m"
 #define BG_YELLOW           "\033[43m"
@@ -72,10 +77,10 @@
 #define BG_CYAN             "\033[46m"
 #define BG_WHITE            "\033[47m"
 
-// #define BG_COLOR_CUSTOM(r,g,b) "\033[48;2;" #r ";" #g ";" #b "m" // Custom 24-bit background colors
+/* #define BG_COLOR_CUSTOM(r,g,b) "\033[48;2;" #r ";" #g ";" #b "m" // Custom 24-bit background colors */
 #define BG_COLOR_CUSTOM(r,g,b) customBgColor(r,g,b)
 
-// Styles
+/* Styles */
 #define BOLD                "\033[1m"
 #define DIM                 "\033[2m"
 #define ITALIC              "\033[3m"
@@ -84,8 +89,8 @@
 #define REVERSE             "\033[7m"
 #define CONCEAL             "\033[8m"
 
-// Clear specific color/styles
-#define CLR                 "\033[0m"   // Clear color and style of text before this macro
+/* Clear specific color/styles */
+#define CLR                 "\033[0m"   /* Clear color and style of text before this macro */
 #define CLR_TEXT_COLOR      "\033[39m"
 #define CLR_BG_COLOR        "\033[49m"
 #define CLR_BOLD            "\033[21m"
@@ -96,7 +101,7 @@
 #define CLR_REVERSE         "\033[27m"
 #define CLR_CONCEAL         "\033[28m"
 
-// Prefixes
+/* Prefixes */
 #define ERROR_TYPE          "\033[91m\033[1m[ERROR]\033[0m "
 #define WARNING_TYPE        "\033[93m\033[1m[WARNING]\033[0m "
 #define INFO_TYPE           "\033[94m\033[1m[INFO]\033[0m "
@@ -113,52 +118,50 @@
 
 
 
-// tick provider (User must feed from timer ISR)
+/* tick provider (User must feed from timer ISR) */
 extern volatile uint32_t _debug_tick_ms;
 
 
 
-// Initialize the library; MUST be called before other functions.
-void debug_init(/*TODO: Params to be added*/);
+/* Initialize the library; MUST be called before other functions. */
+void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
 
-static inline void debug_tick() {
-    _debug_tick_ms++;
-}
+void debug_tick(void);
 
-// Basic formatted log
+/* Basic formatted log */
 void debug_log(const char* format, ...);
 
-// Log with a type prefix
+/* Log with a type prefix */
 void debug_logWithType(const char* type, const char* style, const char* format, ...);
 
-// Convenience helpers
+/* Convenience helpers */
 void debug_ok(const char* format, ...);
 void debug_success(const char* format, ...);
 void debug_info(const char* format, ...);
 
-// Variants that accept file and line (used by macros to automatically pass __FILE__/__LINE__)
-// void debug_logWithType_fileline(const char* file, int line, const char* type, const char* format, ...);
+/* Variants that accept file and line */
+/* void debug_logWithType_fileline(const char* file, int line, const char* type, const char* format, ...); */
 void debug_error_fileline(const char* file, int line, const char* format, ...);
 void debug_warning_fileline(const char* file, int line, const char* format, ...);
 
-// Runtime setters
+/* Runtime setters */
 void debug_setTimestampEnabled(bool enabled);
 void debug_setColorEnabled(bool enabled);
-// Enable/disable showing filename:line when using the file/line variants or macros
+/* Enable/disable showing filename:line when using the file/line variants or macros */
 void debug_setFilenameLineEnabled(bool enabled);
 
-// helper functions generating ANSI escape sequences for variable 24-bit colors
-// they return a pointer to a static string which remains valid until the
-// next call. This allows using them inside printf/format strings just like
-// the `COLOR_CUSTOM`/`BG_COLOR_CUSTOM` macros but with runtime values.
+/* helper functions generating ANSI escape sequences for variable 24-bit colors */
+/* they return a pointer to a static string which remains valid until the */
+/* next call. This allows using them inside printf/format strings just like */
+/* the `COLOR_CUSTOM`/`BG_COLOR_CUSTOM` macros but with runtime values. */
 const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
-// Macros to automatically pass caller file/line
-#define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
-#define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
-// #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
+/* Error and warning helpers */
+void debug_error(const char* format, ...);
+void debug_warning(const char* format, ...);
+/* #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__) */
 
 
 
-#endif // __ELEGANT_DEBUG_H
+#endif /* __ELEGANT_DEBUG_H */

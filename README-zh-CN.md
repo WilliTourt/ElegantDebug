@@ -25,28 +25,109 @@
 
 ## 快速开始
 
-- 输出长度由 `DEBUG_BUFFER_LEN` 宏控制（默认 256）
-- 其他使用方式和主分支相同。
+- 本分支专用于 8051，使用 C 语言。
+- 将 `Src-C/ElegantDebug.h` 和 `Src-C/ElegantDebug.c` 加入工程，包含路径添加 `Src-C`。只有一个头文件，实现文件只编译一次。
+- 先初始化 UART 并提供标准库的 `putchar`，再调用 `debug_init`。库不初始化 UART 或定时器。
+- 使用标准库 `vprintf` 逐字符发送，`DEBUG_BUFFER_LEN` 为保留的兼容宏，不为 8051 分配 256 字节消息缓冲区，也不限制单条消息长度。
 
-*其他使用说明待添加*
+### 8051 Keil C51 平台（仅 C 版本）
+
+1. 将 `Src-C/ElegantDebug.h` 与 `Src-C/ElegantDebug.c` 加入 Keil C51 工程。本分支专用于 8051，不需要定义 `USE_8051` 或选择其他平台宏，工程宏列表可以保持为空。
+2. 将以下内容填写到 **Options for Target → BL51 Misc → Overlay**，使未调用的变参日志接口也能复用参数区，避免 DATA 空间溢出。此设置要求日志和 RGB 接口仅从主循环调用，`debug_tick()` 仅从定时器中断调用。
+
+```text
+MAIN ! (_DEBUG_INIT, DEBUG_TICK, _DEBUG_LOG, _DEBUG_LOGWITHTYPE,
+_DEBUG_ERROR_FILELINE, _DEBUG_WARNING_FILELINE, _DEBUG_ERROR, _DEBUG_WARNING,
+_DEBUG_OK, _DEBUG_SUCCESS, _DEBUG_INFO, _DEBUG_SETTIMESTAMPENABLED,
+_DEBUG_SETCOLORENABLED, _DEBUG_SETFILENAMELINEENABLED,
+_CUSTOMTEXTCOLOR, _CUSTOMBGCOLOR)
+```
+
+3. 初始化串口，并提供符合 C51 标准库声明的 `char putchar(char)`。例如，轮询发送实现如下；串口中断处理程序不能同时清除 TI。
+
+```c
+#include <REG52.H>
+#include "ElegantDebug.h"
+
+char putchar(char c) {
+    SBUF = c;
+    while (!TI) { }
+    TI = 0;
+    return c;
+}
+
+/* 串口初始化后调用；8051 不需要 HAL UART 句柄。 */
+debug_init(true, true, true);
+debug_info("count=%u\r\n", (unsigned int)123);
+debug_error_fileline(__FILE__, __LINE__, "error=%d\r\n", (int)-1);
+```
+
+4. 需要时间戳时，在约 1 ms 的定时器 ISR 中调用 `debug_tick()`；不需要时将 `debug_init` 的第一个参数设为 `false`。库读取 32 位毫秒计数器时会短暂关闭中断并恢复原 EA 状态，计数器约 49.7 天后自然回绕。库不初始化串口或定时器。
+
+C51 不支持可变参数宏，普通 `debug_error()`、`debug_warning()` 不带调用位置；需要位置时使用上述 `_fileline` 接口。格式化采用 C51 标准库 `vprintf`，消息逐字符发送，`DEBUG_BUFFER_LEN` 不限制该分支的消息长度。变参实参应与格式匹配，例如 `(unsigned int)value`；字符串常量用于 `%s` 时写 `(char *)"text"`。SMALL 模型默认变参区为 15 字节，避免一次传入过多参数。
+
+RGB 文本和背景色函数各使用一个 24 字节 IDATA 静态缓冲区，返回值在下次调用相同函数时覆盖。日志不会自动添加换行，按需要在格式字符串中使用 `\r\n`。
+
+### 8051 SDCC 平台（仅 C 版本）
+
+在 VS Code + EIDE 中使用普通 **SDCC** 工具链，目标架构设为 `mcs51`，C 标准设为 C89。将 `Src-C` 加入源码目录及包含路径。本分支专用于 8051，不需要定义 `USE_8051` 或选择其他平台宏，工程宏列表可以保持为空。
+
+在你的代码中包含头文件并初始化。先完成 UART 初始化并提供 `int putchar(int c)`，再从 `main()` 中调用下面的 `Debug_Init()`：
+
+```c
+#include <8052.h>
+#include "ElegantDebug.h"
+
+void Debug_Init(void){
+    debug_init(false, false, false);
+    debug_info("Hello from SDCC!\r\n");
+}
+```
+
+构建参数可使用：
+
+```text
+--model-small --iram-size 256 --xram-size 0 --code-size 8192 --opt-code-size
+```
+
+应用程序包含 `<8052.h>`，提供 `int putchar(int c)`，中断采用 `void Timer2_ISR(void) __interrupt(5)` 写法。先初始化 UART，再调用 `debug_init(true, false, true)`；需要时间戳时，从约 1 ms 的定时器 ISR 调用 `debug_tick()`。库通过保存并恢复 EA 保护时间戳读取，同时保留 Keil C51 支持。
+
+默认 SDCC mcs51 SMALL 格式化库不支持 `%f` 输出，可以使用整数定点数，例如 `debug_info("value=%u.%02u\r\n", (unsigned int)25, (unsigned int)50)`。改变格式化库时，应重新评估 Flash 和 RAM。串口初始化、波特率、时钟模式和 `putchar` 由应用程序负责。
+
+### 串口与时间戳
+
+P3.1/TXD 接串口模块 RXD，P3.0/RXD 接 TXD，并共地。打开 HEX 后在 STC 下载工具中选择实际串口和 STC89C52RC，等待下载提示后冷启动开发板。下载结束再打开串口接收，设置 9600、8 位数据、无校验、1 位停止位；先打开串口再复位可看到启动日志。
+
+不要让按键占用 P3.0/P3.1。查看日志期间不要按仍接在 TXD 上的按键。
+
+需要时间戳时，每约 1 ms 从中断调用 `debug_tick()`。示例 Timer2 使用 `0xFC66` 自动重装，在 11.0592 MHz、12T 下约为 1.000434 ms，适合日志计时；精确长期计时需另行校准。读取计数器时会短暂关闭中断并恢复原 EA 状态，32 位计数约 49.7 天后回绕。
 
 ### 示例
 
 ```c
-// DEMO TO BE ADDED
+#include "ElegantDebug.h"
+
+void app_start(void) {
+    debug_init(false, false, false);
+    debug_info("UART: %u baud\r\n", (unsigned int)9600);
+    debug_logWithType("SENSOR", COLOR_CYAN, "temperature=%u.%02u C\r\n",
+                      (unsigned int)25, (unsigned int)50);
+    debug_setFilenameLineEnabled(true);
+    debug_error_fileline(__FILE__, __LINE__, "error=%d\r\n", (int)-1);
+}
 ```
 
 ## API
 
-- `void debug_init(/*待添加*/);`
-  - 初始化库，必须先调用。
-- `static inline void debug_tick(void);`
+- `void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);`
+  - 串口初始化后调用，三个参数依次控制时间戳、颜色、文件名行号，不传串口句柄。
+- `void debug_tick(void);`
   - 定时器 ISR 中调用以递增内部毫秒计数器，用于时间戳功能。
 - `void debug_log(const char* format, ...);`
   - 原始格式化输出（无前缀）。
 - `void debug_logWithType(const char* type, const char* style, const char* format, ...);`
   - 自定义前缀和样式的输出（例如 `"\033[91m"` + `"[ CUSTOM ]"`）。
-- 便捷类型输出（自动包含文件名和行号）：
+- 便捷类型输出（无自动文件名行号）：
   - `void debug_error(const char* format, ...);`
   - `void debug_warning(const char* format, ...);`
 - 便捷类型输出（无文件名行号）：
@@ -58,21 +139,16 @@
   - `void debug_setColorEnabled(bool enabled);`
   - `void debug_setFilenameLineEnabled(bool enabled);`
 
-### 需要注意
-
-- `error` 和 `warning` 函数**不能使用可变参数**，因为它们需要获取调用位置（文件名和行号）。
-
-*其他内容待添加*
-
 ### 关于ANSI转义码
 
 库中的颜色和样式宏均为 ANSI 转义码，如果终端不支持，可以通过运行时设置关闭颜色输出，并停用%s修饰的操作。
 
 要为你的输出字符串设置自定义颜色和样式，请用一对 `%s` 来包裹颜色/样式宏和用以清除颜色/样式的宏。例如：
 
-```cpp
-log("Hello World! %sI am RED!%s %s%sI am italic and GREEN!%s Now i cleared italic style but still GREEN.%s\n", 
-COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
+```c
+debug_setColorEnabled(true);
+debug_log("%sred text%s\r\n", (char *)COLOR_RED, (char *)CLR);
+debug_log("%srgb text%s\r\n", COLOR_CUSTOM(0, 128, 255), (char *)CLR);
 ```
 
 对于24位自定义颜色，请使用 `COLOR_CUSTOM(r,g,b)` 和 `BG_COLOR_CUSTOM(r,g,b)` 宏，其中 `r`、`g`、`b` 为0~255之间的整数。这些宏现在内部调用了运行时辅助函数，因此可以使用变量而非字面常量传递颜色值。
@@ -81,7 +157,11 @@ COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
 
 ## 常见问题与排查
 
-*待添加*
+- 无输出：确认 UART 已初始化、TI 未被串口中断同时清除、接线及波特率正确，重新复位开发板。
+- 时间戳不走：确认定时器、总中断以及周期性的 `debug_tick()` 调用；1.25 ms 应用节拍不能直接当作 1 ms 使用。
+- Keil DATA 溢出：检查 SMALL 模型及示例中的 Overlay 设置；新增业务变量后仍需评估 RAM 和栈空间。
+- 终端显示 ANSI 控制字符：关闭颜色，并停用手动插入转义码的语句。
+- 格式化值异常：检查参数类型；SDCC 的 `<NO FLOAT>` 表示默认库未启用浮点格式化。
 
 ## 更新日志
 

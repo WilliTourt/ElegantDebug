@@ -1,0 +1,9 @@
+/build/
+**/build/
+**/Objects/
+**/Listings/
+*.uvopt
+*.uvoptx
+*.uvgui.*
+*.uvguix.*
+*.build_log.htm
