@@ -90,7 +90,7 @@
 #elif defined(USE_8051)
     #define DEBUG_PLATFORM_STM32  0
     #define DEBUG_PLATFORM_RA     0
-    #define DEBUG_PLATFORM_TI     1
+    #define DEBUG_PLATFORM_TI     0
     #define DEBUG_PLATFORM_8051   1
 #else
     #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL macro before including ElegantDebug.h"
@@ -321,7 +321,10 @@ const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
 // Macros to automatically pass caller file/line
-#if !DEBUG_PLATFORM_8051
+#if DEBUG_PLATFORM_8051
+#define debug_error(...)                debug_error_fileline("", __LINE__, __VA_ARGS__)
+#define debug_warning(...)              debug_warning_fileline("", __LINE__, __VA_ARGS__)
+#else
 #define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
 #define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
 #endif
