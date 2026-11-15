@@ -14,8 +14,8 @@
  *   - call `debug_tick()` from a 1 ms timer ISR for timestamps.
  *   - See repository README for examples and integration instructions.
  *
- * @author:    Jian
- * @date:      2026-11-15
+ * @author:    
+ * @date:      2026-XX-XX
  *
  * @changelog:
  * - This version is a branch of main ElegantDebug library, branch date:
@@ -29,34 +29,17 @@
 
 /*** Buffer size settings ***********************************************/
 
-// [C51 Adaptation] Reduced buffer size to fit the limited RAM of 8051.
-#define DEBUG_BUFFER_LEN 32
+#define DEBUG_BUFFER_LEN 256
 
 /************************************************************************/
 
 /*** Platform-specific includes *****************************************/
 
-#ifdef __C51__
-    #include <reg52.h>
-    #include <stdarg.h>
-    #include <stdio.h>
-    #include <string.h>
-    typedef unsigned char bool;
-    #define true 1
-    #define false 0
-    typedef unsigned long uint32_t;
-    typedef unsigned int uint16_t;
-    typedef unsigned char uint8_t;
-    #define inline
-    #define DBG_BUF_MEM xdata // Force XDATA to prevent internal RAM overflow
-#else
-    #include <stdbool.h>
-    #include <stdarg.h>
-    #include <stdint.h>
-    #include <stdio.h>
-    #include <string.h>
-    #define DBG_BUF_MEM
-#endif
+#include <stdbool.h>
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 /* ANSI escape codes for output *****************************************/
 
@@ -136,10 +119,11 @@ extern volatile uint32_t _debug_tick_ms;
 
 
 // Initialize the library; MUST be called before other functions.
-void debug_init(void);
+void debug_init(/*TODO: Params to be added*/);
 
-// [C51 Adaptation] C51 does not support the 'inline' keyword, using macro instead.
-#define debug_tick()  (_debug_tick_ms++)
+static inline void debug_tick() {
+    _debug_tick_ms++;
+}
 
 // Basic formatted log
 void debug_log(const char* format, ...);
@@ -171,12 +155,9 @@ const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
 // Macros to automatically pass caller file/line
-// [C51 Adaptation] C51 does not support variadic macros, so they are disabled for 8051.
-#ifndef __C51__
 #define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
 #define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
 // #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
-#endif
 
 
 
