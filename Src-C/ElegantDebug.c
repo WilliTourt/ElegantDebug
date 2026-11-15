@@ -172,7 +172,8 @@ void debug_logWithType(const char* type, const char* style, const char* format, 
     va_end(args);
 
     char combined[DEBUG_BUFFER_LEN + 32];
-    snprintf(combined, sizeof(combined), "\033[1m%s[%s]\033[0m %s", style, type, msg);
+    _color_enabled ? snprintf(combined, sizeof(combined), "\033[1m%s[%s]\033[0m %s", style, type, msg)
+                   : snprintf(combined, sizeof(combined), "%s[%s] %s", style, type, msg);
     _send(combined);
 }
 
