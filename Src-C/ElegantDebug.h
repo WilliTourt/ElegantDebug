@@ -1,7 +1,11 @@
+/*******************************************************************************
+ * @file    ElegantDebug.h
+ * @version 1.6
+ * @brief   ANSI-colored debug logging — STM32 HAL, Renesas RA FSP, TI MSPM0 DL.
+ *******************************************************************************/
+
 #ifndef __ELEGANT_DEBUG_H
 #define __ELEGANT_DEBUG_H
-
-#define DEBUG_BUFFER_LEN 256
 
 #ifdef __C51__
     #include <reg52.h>
@@ -21,6 +25,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#define DEBUG_BUFFER_LEN 256
+
+/* ANSI escape codes for output *****************************************/
 #define COLOR_DARK_RED      "\033[31m"
 #define COLOR_DARK_GREEN    "\033[32m"
 #define COLOR_DARK_YELLOW   "\033[33m"
@@ -37,6 +44,8 @@
 #define COLOR_CYAN          "\033[96m"
 #define COLOR_WHITE         "\033[97m"
 
+#define COLOR_CUSTOM(r,g,b) customTextColor(r,g,b)
+
 #define BG_RED              "\033[41m"
 #define BG_GREEN            "\033[42m"
 #define BG_YELLOW           "\033[43m"
@@ -44,6 +53,8 @@
 #define BG_MAGENTA          "\033[45m"
 #define BG_CYAN             "\033[46m"
 #define BG_WHITE            "\033[47m"
+
+#define BG_COLOR_CUSTOM(r,g,b) customBgColor(r,g,b)
 
 #define BOLD                "\033[1m"
 #define DIM                 "\033[2m"
@@ -85,7 +96,8 @@ extern "C" {
 #ifdef __C51__
 void debug_init(bool enable_timestamp, bool enable_color, bool enable_filename_line);
 #else
-void debug_init(void* huart, bool enable_timestamp, bool enable_color, bool enable_filename_line);
+// 原版的声明原封不动
+void debug_init(/*TODO: Params to be added*/);
 #endif
 
 static inline void debug_tick(void) {
@@ -93,6 +105,7 @@ static inline void debug_tick(void) {
 }
 
 #ifdef __C51__
+// 51 不支持变长参数，这里单独声明
 void debug_log(const char* text);
 void debug_logWithType(const char* type, const char* style, const char* text);
 void debug_ok(const char* text);
@@ -101,6 +114,7 @@ void debug_info(const char* text);
 void debug_error_fileline(const char* file, int line, const char* text);
 void debug_warning_fileline(const char* file, int line, const char* text);
 #else
+// 原版的声明原封不动
 void debug_log(const char* format, ...);
 void debug_logWithType(const char* type, const char* style, const char* format, ...);
 void debug_ok(const char* format, ...);
