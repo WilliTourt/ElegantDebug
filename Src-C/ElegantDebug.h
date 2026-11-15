@@ -1,7 +1,7 @@
 /*******************************************************************************
  * @file    ElegantDebug.h
  * @version 1.6
- * @brief   ANSI-colored debug logging — STM32 HAL, Renesas RA FSP, TI MSPM0 DL.
+ * @brief   ANSI-colored debug logging — STM32 HAL, Renesas RA FSP, TI MSPM0 DL, and 8051.
  *
  * This header provides a small C API that mirrors the C++
  * `ElegantDebug` class.
@@ -12,16 +12,27 @@
  *  - STM32: STM32Cube HAL UART driver and `HAL_UART_MODULE_ENABLED` required.
  *  - Renesas RA: RASC-generated `hal_data.h` with an SCI UART stack.
  *  - TI MSPM0: sysconfig-generated `ti_msp_dl_config.h` with a UART stack configured.
- * 
+ *  - 8051: Keil C51, any standard 8051 with UART0 (e.g. STC89C52RC);
+ *    the user configures the serial port in main().
+ *
  * Usage:
- *   - Define USE_STM32_HAL, USE_RA_FSP, or USE_TI_MSPM0 before including this header.
+ *   - Define USE_STM32_HAL, USE_RA_FSP, USE_TI_MSPM0_DL, or USE_8051 before including this header.
  *   - STM32:  pass a `UART_HandleTypeDef*` or enable USB-CDC class.
  *   - RA FSP: pass a `uart_instance_t const*`.
  *   - TI MSPM0: pass a `UART_Regs*`.
+ *   - 8051:   no handle needed; configure UART0 in main() and call `debug_tick()`
+ *             from a 1 ms timer ISR if timestamps are wanted.
  *   - Call `log`, `info`, `error`, etc. to print messages.
  *
  * Notes:
- *   - RA FSP / TI MSPM0: call `debug_tick()` from a 1 ms timer ISR for timestamps.
+ *   - RA FSP / TI MSPM0 / 8051: call `debug_tick()` from a 1 ms timer ISR for timestamps.
+ *   - 8051: Keil C51's preprocessor does not support __VA_ARGS__, so on 8051
+ *     `debug_error()`/`debug_warning()` are plain variadic functions without
+ *     automatic file/line; call `debug_error_fileline()`/`debug_warning_fileline()`
+ *     directly when the calling location is needed.
+ *   - 8051: all large formatting buffers are shared `static xdata` variables
+ *     (~248 bytes of XDATA, fits a 512-byte-RAM part like the STC89C52RC),
+ *     so the debug functions must not be called from ISRs.
  *   - See repository README for examples and integration instructions.
  *
  * @author:    WilliTourt <willitourt@foxmail.com>
@@ -43,6 +54,12 @@
  *               debug_onTxComplete(uart_callback_args_t *p_args) to set _txDone flag.
  * - 2026-11-14: Added 8051/STC89C52/STC89C52RC support (USE_8051).
  *               Define USE_STM32_HAL, USE_RA_FSP, USE_TI_MSPM0_DL, or USE_8051 before including this header.
+ * - 2026-11-15: 8051 rework: fixed preprocessor nesting, replaced per-call
+ *               buffers with shared static-xdata buffers (~248 B, fits the
+ *               STC89C52RC), bounded ED_SNPRINTF/ED_VSNPRINTF wrappers,
+ *               chunked timestamp/text TX with ES masking, EA restore in
+ *               _getTick(), and C51-compatible debug_error()/debug_warning()
+ *               (C51 preprocessor has no __VA_ARGS__).
  *******************************************************************************/
 
 #ifndef __ELEGANT_DEBUG_H
@@ -70,9 +87,8 @@
 
 /*** Buffer size settings ***********************************************/
 
-//#define DEBUG_BUFFER_LEN 256
 #if defined(USE_8051)
-#define DEBUG_BUFFER_LEN 64     // 8051: keep buffers small */
+#define DEBUG_BUFFER_LEN 64     // 8051: keep buffers small (fits shared-buffer XDATA budget)
 #else
 #define DEBUG_BUFFER_LEN 256
 #endif
@@ -80,43 +96,28 @@
 /************************************************************************/
 
 
-/*
+/*** Platform detection *************************************************/
+
 #if defined(USE_STM32_HAL)
-    #define DEBUG_PLATFORM_STM32  1
-    #define DEBUG_PLATFORM_RA     0
-    #define DEBUG_PLATFORM_TI     0
+    #define DEBUG_PLATFORM_STM32 1
+    #define DEBUG_PLATFORM_RA 0
+    #define DEBUG_PLATFORM_TI 0
+    #define DEBUG_PLATFORM_8051 0
 #elif defined(USE_RA_FSP)
-    #define DEBUG_PLATFORM_STM32  0
-    #define DEBUG_PLATFORM_RA     1
-    #define DEBUG_PLATFORM_TI     0
+    #define DEBUG_PLATFORM_STM32 0
+    #define DEBUG_PLATFORM_RA 1
+    #define DEBUG_PLATFORM_TI 0
+    #define DEBUG_PLATFORM_8051 0
 #elif defined(USE_TI_MSPM0_DL)
-    #define DEBUG_PLATFORM_STM32  0
-    #define DEBUG_PLATFORM_RA     0
-    #define DEBUG_PLATFORM_TI     1
-#else
-    #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL macro before including ElegantDebug.h"
-#endif
-*/
-#if defined(USE_STM32_HAL)
-#define DEBUG_PLATFORM_STM32 1
-#define DEBUG_PLATFORM_RA 0
-#define DEBUG_PLATFORM_TI 0
-#define DEBUG_PLATFORM_8051 0
-#elif defined(USE_RA_FSP)
-#define DEBUG_PLATFORM_STM32 0
-#define DEBUG_PLATFORM_RA 1
-#define DEBUG_PLATFORM_TI 0
-#define DEBUG_PLATFORM_8051 0
-#elif defined(USE_TI_MSPM0_DL)
-#define DEBUG_PLATFORM_STM32 0
-#define DEBUG_PLATFORM_RA 0
-#define DEBUG_PLATFORM_TI 1
-#define DEBUG_PLATFORM_8051 0
+    #define DEBUG_PLATFORM_STM32 0
+    #define DEBUG_PLATFORM_RA 0
+    #define DEBUG_PLATFORM_TI 1
+    #define DEBUG_PLATFORM_8051 0
 #elif defined(USE_8051)
-#define DEBUG_PLATFORM_STM32 0
-#define DEBUG_PLATFORM_RA 0
-#define DEBUG_PLATFORM_TI 0
-#define DEBUG_PLATFORM_8051 1
+    #define DEBUG_PLATFORM_STM32 0
+    #define DEBUG_PLATFORM_RA 0
+    #define DEBUG_PLATFORM_TI 0
+    #define DEBUG_PLATFORM_8051 1
 #else
 #error "Please define USE_STM32_HAL / USE_RA_FSP / USE_TI_MSPM0_DL / USE_8051 macro before including ElegantDebug.h"
 #endif
@@ -197,11 +198,6 @@ typedef unsigned long uint32_t;
 #include <stdbool.h>
 #include <stdint.h>
 #endif
-/*
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-*/
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -278,7 +274,7 @@ typedef unsigned long uint32_t;
 
 
 
-// RA FSP / TI MSPM0 tick provider (User must feed from timer ISR)
+// RA FSP / TI MSPM0 / 8051 tick provider (User must feed from timer ISR)
 #if (DEBUG_PLATFORM_RA || DEBUG_PLATFORM_TI || DEBUG_PLATFORM_8051)
 extern volatile uint32_t _debug_tick_ms;
 #endif
@@ -317,13 +313,25 @@ static inline void debug_tick() {
 }
 #elif DEBUG_PLATFORM_8051
 // 8051: Keil C51 has no 'inline', so this is a normal function
-void debug_tick();
+void debug_tick(void);
 #endif
 
 #if DEBUG_PLATFORM_RA
 void debug_onTxComplete(uart_callback_args_t *p_args);
 #endif
 
+#if DEBUG_PLATFORM_8051
+// Keil C51: variadic functions must be declared `reentrant`
+void debug_log(const char* format, ...) reentrant;
+void debug_logWithType(const char* type, const char* style, const char* format, ...) reentrant;
+void debug_ok(const char* format, ...) reentrant;
+void debug_success(const char* format, ...) reentrant;
+void debug_info(const char* format, ...) reentrant;
+void debug_error_fileline(const char* file, int line, const char* format, ...) reentrant;
+void debug_warning_fileline(const char* file, int line, const char* format, ...) reentrant;
+void debug_error(const char* format, ...) reentrant;
+void debug_warning(const char* format, ...) reentrant;
+#else
 // Basic formatted log
 void debug_log(const char* format, ...);
 
@@ -339,11 +347,11 @@ void debug_info(const char* format, ...);
 // void debug_logWithType_fileline(const char* file, int line, const char* type, const char* format, ...);
 void debug_error_fileline(const char* file, int line, const char* format, ...);
 void debug_warning_fileline(const char* file, int line, const char* format, ...);
+#endif
 
-// Runtime setters
+// runtime setters
 void debug_setTimestampEnabled(bool enabled);
 void debug_setColorEnabled(bool enabled);
-// Enable/disable showing filename:line when using the file/line variants or macros
 void debug_setFilenameLineEnabled(bool enabled);
 
 // helper functions generating ANSI escape sequences for variable 24-bit colors
@@ -354,9 +362,14 @@ const char* customTextColor(uint8_t r, uint8_t g, uint8_t b);
 const char* customBgColor(uint8_t r, uint8_t g, uint8_t b);
 
 // Macros to automatically pass caller file/line
+// Keil C51's preprocessor does not support __VA_ARGS__ (C99 variadic macros),
+// so on 8051 debug_error()/debug_warning() are plain variadic functions
+// without automatic file/line (declared above).
+#if !DEBUG_PLATFORM_8051
 #define debug_error(...)                debug_error_fileline(__FILE__, __LINE__, __VA_ARGS__)
 #define debug_warning(...)              debug_warning_fileline(__FILE__, __LINE__, __VA_ARGS__)
 // #define debug_logWithType(type, ...) debug_logWithType_fileline(__FILE__, __LINE__, (type), __VA_ARGS__)
+#endif
 
 #ifdef __cplusplus
 }
