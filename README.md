@@ -4,7 +4,7 @@
 
 ## Introduction
 
-- A lightweight serial/USB-CDC debug library suitable for both C and C++ projects on STM32 using the HAL drivers, Renesas RA Family using FSP, or TI MSPM0 using DL (Driver Library).
+- A lightweight serial/USB-CDC debug library suitable for both C and C++ projects on STM32 using the HAL drivers, Renesas RA Family using FSP, or TI MSPM0 using DL (Driver Library). *Now supports additional chips with 8051 cores such as STC89C52RC. The branch name is '8051.'*.
 - Features:
   - Formatted output
   - Optional timestamp
@@ -261,6 +261,10 @@ For more information about ANSI escape codes, refer to: [ANSI escape code - Hand
 ### v1.6 (2026-08-09)
 
 - **Improvement**: In v1.4 and v1.5, consecutive log calls on the RA FSP platform (without manual delays between them) would cause data loss due to the non-blocking TX behaviour. Added `onTxComplete()` / `debug_onTxComplete()` which must be called from the TX complete UART callback to signal that the transmission has finished.
+
+### v1.6 - 8051 (2026-11-15)
+
+- **New branch**: based on the main branch, for STC89C52RC and other 8051-core MCUs
 
 ## Other
 

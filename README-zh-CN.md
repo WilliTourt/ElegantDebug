@@ -4,7 +4,7 @@
 
 ## 简介
 
-- 这是一个轻量的 串口/USB-CDC 调试库，C / C++ 均适用，适配STM32 HAL库、瑞萨RA FSP 以及 TI MSPM0 DL（Driver Library），提供格式化日志输出功能。
+- 这是一个轻量的 串口/USB-CDC 调试库，C / C++ 均适用，适配STM32 HAL库、瑞萨RA FSP 以及 TI MSPM0 DL（Driver Library），提供格式化日志输出功能。*现已额外支持 STC89C52RC 等 8051 内核的芯片。分支名为 "8051"*。
 - 特点：
   - 格式化日志
   - 可选的时间戳
@@ -259,6 +259,10 @@ COLOR_RED, CLR_TEXT_COLOR, ITALIC, COLOR_GREEN, CLR_ITALIC, CLR);
 ### v1.6 (2026-08-09)
 
 - **改进**: v1.4 和 v1.5 版本中，RA FSP 平台中如连续发送log（中间无手动延时），会导致发送的数据丢失。针对 RA FSP 的非阻塞发送函数，添加了`onTxComplete()`函数，此函数在 TX 完成回调中必须调用来更新发送完成标志。
+
+### v1.6 - 8051 (2026-11-15)
+
+- **新分支**: 仓库基于主分支添加了新的 `8051` 分支，可特别用于如 STC89C52RC 的芯片。
 
 
 ## 其他
